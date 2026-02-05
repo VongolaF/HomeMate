@@ -1,3 +1,5 @@
+"use client";
+
 import { Layout, Menu } from "antd";
 import {
   PieChartOutlined,

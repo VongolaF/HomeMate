@@ -1,3 +1,5 @@
+"use client";
+
 import { Layout } from "antd";
 import HeaderBar from "./HeaderBar";
 import SideNav from "./SideNav";
