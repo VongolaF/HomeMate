@@ -1,14 +1,73 @@
 "use client";
 
-import { Card } from "antd";
+import { Card, Typography } from "antd";
+import dayjs from "dayjs";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 
 export default function StatCards() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [expense, setExpense] = useState(0);
+  const [income, setIncome] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+
+      const start = dayjs().startOf("month").format("YYYY-MM-DD");
+      const end = dayjs().endOf("month").format("YYYY-MM-DD");
+
+      const { data: rows, error: fetchError } = await supabase
+        .from("transactions")
+        .select("amount_base,type")
+        .gte("occurred_at", start)
+        .lte("occurred_at", end);
+
+      if (!isMounted) return;
+      if (fetchError || !rows) {
+        setError("加载没成功");
+        setLoading(false);
+        return;
+      }
+
+      let expenseTotal = 0;
+      let incomeTotal = 0;
+      rows.forEach((row) => {
+        const amount = Number(row.amount_base || 0);
+        if (row.type === "expense") {
+          expenseTotal += amount;
+        } else {
+          incomeTotal += amount;
+        }
+      });
+
+      setExpense(expenseTotal);
+      setIncome(incomeTotal);
+      setLoading(false);
+    };
+
+    fetchData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const balance = useMemo(() => income - expense, [income, expense]);
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-      <Card title="本月支出">¥0</Card>
-      <Card title="本月收入">¥0</Card>
-      <Card title="结余">¥0</Card>
-      <Card title="目标进度">0%</Card>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+      <Card title="本月花了" loading={loading}>
+        {error ? <Typography.Text type="danger">加载没成功</Typography.Text> : `¥${expense.toFixed(2)}`}
+      </Card>
+      <Card title="本月进账" loading={loading}>
+        {error ? <Typography.Text type="danger">加载没成功</Typography.Text> : `¥${income.toFixed(2)}`}
+      </Card>
+      <Card title="剩余" loading={loading}>
+        {error ? <Typography.Text type="danger">加载没成功</Typography.Text> : `¥${balance.toFixed(2)}`}
+      </Card>
     </div>
   );
 }
