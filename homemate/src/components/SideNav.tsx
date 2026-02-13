@@ -1,12 +1,15 @@
 "use client";
 
-import { Layout, Menu } from "antd";
+import { useState } from "react";
+import { Button, Layout, Menu } from "antd";
 import {
   PieChartOutlined,
   CalendarOutlined,
   ProfileOutlined,
   WalletOutlined,
   DashboardOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -31,18 +34,38 @@ const pathToKey = (pathname: string) => {
 export default function SideNav() {
   const pathname = usePathname();
   const selectedKey = pathToKey(pathname);
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <Layout.Sider
       width={220}
+      collapsible={false}
+      collapsed={collapsed}
+      collapsedWidth={72}
       style={{
         background: "#ffffff",
         borderRadius: 16,
         boxShadow: "0 8px 20px rgba(0, 0, 0, 0.06)",
         padding: "12px 8px",
         marginRight: 16,
+           position: "sticky",
+           top: 0,
+           height: "100vh",
+        alignSelf: "flex-start",
+        overflow: "auto",
       }}
     >
+      <div style={{ display: "flex", justifyContent: "flex-start", padding: "0 4px 8px" }}>
+        <Button
+          type="text"
+          onClick={() => setCollapsed((value) => !value)}
+          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          aria-label={collapsed ? "展开导航" : "收起导航"}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 8 }}
+        >
+          {collapsed ? null : "收起导航栏"}
+        </Button>
+      </div>
       <Menu
         mode="inline"
         selectedKeys={[selectedKey]}
@@ -51,6 +74,7 @@ export default function SideNav() {
           icon: item.icon,
           label: <Link href={item.href}>{item.label}</Link>,
         }))}
+        inlineCollapsed={collapsed}
         style={{ background: "transparent", borderRight: 0 }}
       />
     </Layout.Sider>
