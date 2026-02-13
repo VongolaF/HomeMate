@@ -2,7 +2,6 @@
 
 import StatCards from "./StatCards";
 import MonthlyTrendChart from "./MonthlyTrendChart";
-import CategoryPieChart from "./CategoryPieChart";
 import YearlyTrendMini from "./YearlyTrendMini";
 import DashboardCalendar from "./DashboardCalendar";
 import AddTransactionModal from "@/components/transactions/AddTransactionModal";
@@ -15,12 +14,11 @@ export default function Dashboard() {
         <Typography.Title level={3} style={{ margin: 0 }}>
           首页
         </Typography.Title>
-        <AddTransactionModal buttonText="+ 添加记录" />
+        {/* <AddTransactionModal buttonText="+ 添加记录" /> */}
       </Space>
       <StatCards />
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
         <MonthlyTrendChart />
-        <CategoryPieChart />
       </div>
       <div
         style={{
