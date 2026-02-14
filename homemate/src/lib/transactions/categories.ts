@@ -1,12 +1,18 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { UserCategory } from "@/types/transactions";
 
-export async function listUserCategories() {
+export async function listUserCategories(options: { includeInactive?: boolean } = {}) {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("user_categories")
     .select("*")
     .order("sort_order", { ascending: true });
+
+  if (!options.includeInactive) {
+    query = query.eq("is_active", true);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data ?? []) as UserCategory[];
@@ -14,13 +20,9 @@ export async function listUserCategories() {
 
 export async function upsertUserCategory(input: Partial<UserCategory>) {
   const supabase = createSupabaseServerClient();
-  let userId = input.user_id;
-
-  if (!userId) {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    userId = data.user?.id;
-  }
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  const userId = data.user?.id;
 
   if (!userId) {
     throw new Error("Authenticated user required to upsert category.");
