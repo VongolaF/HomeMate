@@ -8,6 +8,8 @@ export interface UserCategory {
   type: TransactionType;
   sort_order: number;
   is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Transaction {
@@ -20,5 +22,5 @@ export interface Transaction {
   type: TransactionType;
   occurred_at: string;
   note?: string | null;
-  tags: string[];
+  tags: string[] | null;
 }
