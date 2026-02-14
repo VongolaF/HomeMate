@@ -1,13 +1,10 @@
 import "server-only";
 
-import {
-  createSupabaseServerClient,
-  createSupabaseServerReadClient,
-} from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { UserCategory } from "@/types/transactions";
 
 export async function listUserCategories(options: { includeInactive?: boolean } = {}) {
-  const supabase = createSupabaseServerReadClient();
+  const supabase = createSupabaseServerClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
 
   if (userError) throw userError;
