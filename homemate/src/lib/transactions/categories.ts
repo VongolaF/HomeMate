@@ -1,8 +1,11 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createSupabaseServerClient,
+  createSupabaseServerReadClient,
+} from "@/lib/supabase/server";
 import type { UserCategory } from "@/types/transactions";
 
 export async function listUserCategories(options: { includeInactive?: boolean } = {}) {
-  const supabase = createSupabaseServerClient();
+  const supabase = createSupabaseServerReadClient();
   let query = supabase
     .from("user_categories")
     .select("*")
