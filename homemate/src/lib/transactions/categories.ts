@@ -19,7 +19,7 @@ export async function listUserCategories(options: { includeInactive?: boolean } 
   let query = supabase
     .from("user_categories")
     .select("*")
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })
     .eq("user_id", userId);
 
   if (!options.includeInactive) {
