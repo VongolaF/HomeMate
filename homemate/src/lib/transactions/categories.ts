@@ -14,9 +14,21 @@ export async function listUserCategories() {
 
 export async function upsertUserCategory(input: Partial<UserCategory>) {
   const supabase = createSupabaseServerClient();
+  let userId = input.user_id;
+
+  if (!userId) {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    userId = data.user?.id;
+  }
+
+  if (!userId) {
+    throw new Error("Authenticated user required to upsert category.");
+  }
+
   const { data, error } = await supabase
     .from("user_categories")
-    .upsert(input)
+    .upsert({ ...input, user_id: userId })
     .select("*")
     .single();
 
