@@ -1,5 +1,13 @@
-import EmptyState from "@/components/EmptyState";
+import TransactionsPageClient from "@/components/transactions/TransactionsPageClient";
+import { getTransactionsData } from "@/app/transactions/actions";
 
-export default function TransactionsPage() {
-  return <EmptyState title="暂无记账记录" />;
+export default async function TransactionsPage() {
+  const { transactions, categories } = await getTransactionsData({});
+
+  return (
+    <TransactionsPageClient
+      initialTransactions={transactions}
+      initialCategories={categories}
+    />
+  );
 }

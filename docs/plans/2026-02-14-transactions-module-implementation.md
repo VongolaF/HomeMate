@@ -57,6 +57,46 @@ alter table public.transactions
 alter table public.transactions
   add column if not exists tags text[] default '{}';
 
+insert into public.user_categories (user_id, name, icon, type, sort_order, is_active)
+select distinct on (t.user_id, c.name, c.type, c.icon)
+  t.user_id,
+  c.name,
+  c.icon,
+  c.type,
+  0,
+  true
+from public.transactions t
+join public.categories c on c.id = t.category_id
+where t.category_id is not null;
+
+with mapping as (
+  select t.user_id,
+         t.category_id as old_category_id,
+         min(u.id) as new_category_id
+  from public.transactions t
+  join public.categories c on c.id = t.category_id
+  join public.user_categories u
+    on u.user_id = t.user_id
+   and u.name = c.name
+   and u.type = c.type
+   and coalesce(u.icon, '') = coalesce(c.icon, '')
+  where t.category_id is not null
+  group by t.user_id, t.category_id
+)
+update public.transactions t
+set category_id = m.new_category_id
+from mapping m
+where t.user_id = m.user_id
+  and t.category_id = m.old_category_id;
+
+update public.transactions t
+set category_id = null
+where t.category_id is not null
+  and not exists (
+    select 1 from public.user_categories u
+    where u.id = t.category_id
+  );
+
 alter table public.transactions
   add constraint transactions_category_id_fkey
     foreign key (category_id) references public.user_categories(id);
@@ -87,6 +127,8 @@ export interface UserCategory {
   type: TransactionType;
   sort_order: number;
   is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Transaction {
@@ -99,7 +141,7 @@ export interface Transaction {
   type: TransactionType;
   occurred_at: string;
   note?: string | null;
-  tags: string[];
+  tags: string[] | null;
 }
 ```
 
@@ -115,18 +157,104 @@ git commit -m "feat(types): add transaction types"
 
 **Files:**
 - Create: `homemate/src/lib/transactions/categories.ts`
+- Modify: `homemate/src/lib/supabase/server.ts`
+- Modify: `homemate/package.json`
 
-**Step 1: Write data helpers**
+**Step 1: Add Supabase server client helper**
 ```ts
+import "server-only";
+
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+
+export function createSupabaseServerClient() {
+  const cookieStore = cookies();
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name, value, options) {
+          try {
+            cookieStore.set({ name, value, ...options });
+          } catch {
+            // Ignore cookie mutation errors outside actions/handlers.
+          }
+        },
+        remove(name, options) {
+          try {
+            cookieStore.set({ name, value: "", ...options });
+          } catch {
+            // Ignore cookie mutation errors outside actions/handlers.
+          }
+        },
+      },
+    }
+  );
+}
+
+export function createSupabaseServerReadClient() {
+  const cookieStore = cookies();
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name) {
+          return cookieStore.get(name)?.value;
+        },
+        set() {},
+        remove() {},
+      },
+    }
+  );
+}
+```
+
+**Step 2: Add dependency**
+```json
+{
+  "dependencies": {
+    "@supabase/ssr": "^0.6.0"
+  }
+}
+```
+
+**Step 3: Write data helpers**
+```ts
+import "server-only";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { UserCategory } from "@/types/transactions";
 
-export async function listUserCategories() {
+export async function listUserCategories(options: { includeInactive?: boolean } = {}) {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+
+  if (userError) throw userError;
+
+  const userId = userData.user?.id;
+
+  if (!userId) {
+    throw new Error("Authenticated user required to list categories.");
+  }
+
+  let query = supabase
     .from("user_categories")
     .select("*")
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })
+    .eq("user_id", userId);
+
+  if (!options.includeInactive) {
+    query = query.eq("is_active", true);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data ?? []) as UserCategory[];
@@ -134,9 +262,17 @@ export async function listUserCategories() {
 
 export async function upsertUserCategory(input: Partial<UserCategory>) {
   const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  const userId = data.user?.id;
+
+  if (!userId) {
+    throw new Error("Authenticated user required to upsert category.");
+  }
+
   const { data, error } = await supabase
     .from("user_categories")
-    .upsert(input)
+    .upsert({ ...input, user_id: userId })
     .select("*")
     .single();
 
@@ -146,18 +282,27 @@ export async function upsertUserCategory(input: Partial<UserCategory>) {
 
 export async function deactivateUserCategory(id: string) {
   const supabase = createSupabaseServerClient();
+  const { data, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const userId = data.user?.id;
+
+  if (!userId) {
+    throw new Error("Authenticated user required to deactivate category.");
+  }
+
   const { error } = await supabase
     .from("user_categories")
     .update({ is_active: false })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", userId);
 
   if (error) throw error;
 }
 ```
 
-**Step 2: Commit**
+**Step 4: Commit**
 ```bash
-git add homemate/src/lib/transactions/categories.ts
+git add homemate/src/lib/transactions/categories.ts homemate/src/lib/supabase/server.ts homemate/package.json
 git commit -m "feat(transactions): add category data helpers"
 ```
 
@@ -170,6 +315,8 @@ git commit -m "feat(transactions): add category data helpers"
 
 **Step 1: Write data helpers**
 ```ts
+import "server-only";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Transaction } from "@/types/transactions";
 
@@ -183,17 +330,31 @@ export interface TransactionFilters {
   tags?: string[];
 }
 
-export async function listTransactions(filters: TransactionFilters) {
+export async function listTransactions(filters: TransactionFilters = {}) {
   const supabase = createSupabaseServerClient();
-  let query = supabase.from("transactions").select("*");
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+
+  if (userError) throw userError;
+
+  const userId = userData.user?.id;
+
+  if (!userId) {
+    throw new Error("Authenticated user required to list transactions.");
+  }
+
+  let query = supabase.from("transactions").select("*").eq("user_id", userId);
 
   if (filters.startDate) query = query.gte("occurred_at", filters.startDate);
   if (filters.endDate) query = query.lte("occurred_at", filters.endDate);
   if (filters.type) query = query.eq("type", filters.type);
-  if (filters.categoryIds?.length) query = query.in("category_id", filters.categoryIds);
-  if (filters.minAmount) query = query.gte("amount_base", filters.minAmount);
-  if (filters.maxAmount) query = query.lte("amount_base", filters.maxAmount);
-  if (filters.tags?.length) query = query.overlaps("tags", filters.tags);
+  if (Array.isArray(filters.categoryIds) && filters.categoryIds.length) {
+    query = query.in("category_id", filters.categoryIds);
+  }
+  if (filters.minAmount !== undefined) query = query.gte("amount_base", filters.minAmount);
+  if (filters.maxAmount !== undefined) query = query.lte("amount_base", filters.maxAmount);
+  if (Array.isArray(filters.tags) && filters.tags.length) {
+    query = query.overlaps("tags", filters.tags);
+  }
 
   const { data, error } = await query.order("occurred_at", { ascending: false });
   if (error) throw error;
@@ -202,9 +363,19 @@ export async function listTransactions(filters: TransactionFilters) {
 
 export async function upsertTransaction(input: Partial<Transaction>) {
   const supabase = createSupabaseServerClient();
+  const { data, error: userError } = await supabase.auth.getUser();
+
+  if (userError) throw userError;
+
+  const userId = data.user?.id;
+
+  if (!userId) {
+    throw new Error("Authenticated user required to upsert transaction.");
+  }
+
   const { data, error } = await supabase
     .from("transactions")
-    .upsert(input)
+    .upsert({ ...input, user_id: userId })
     .select("*")
     .single();
 
@@ -214,7 +385,21 @@ export async function upsertTransaction(input: Partial<Transaction>) {
 
 export async function deleteTransaction(id: string) {
   const supabase = createSupabaseServerClient();
-  const { error } = await supabase.from("transactions").delete().eq("id", id);
+  const { data, error: userError } = await supabase.auth.getUser();
+
+  if (userError) throw userError;
+
+  const userId = data.user?.id;
+
+  if (!userId) {
+    throw new Error("Authenticated user required to delete transaction.");
+  }
+
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
   if (error) throw error;
 }
 ```
@@ -236,22 +421,35 @@ git commit -m "feat(transactions): add transaction data helpers"
 ```ts
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export async function getExchangeRate(rateDate: string, fromCurrency: string, toCurrency: string) {
+export async function getExchangeRate(
+  rateDate: string,
+  fromCurrency: string,
+  toCurrency: string
+): Promise<number | null> {
   if (fromCurrency === toCurrency) return 1;
+
+  const dateOnly = rateDate.split("T")[0];
+  const isValidFormat = /^\d{4}-\d{2}-\d{2}$/.test(dateOnly);
+  if (!isValidFormat) return null;
+
+  const parsedDate = new Date(`${dateOnly}T00:00:00Z`);
+  if (Number.isNaN(parsedDate.getTime())) return null;
+  if (parsedDate.toISOString().slice(0, 10) !== dateOnly) return null;
 
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("exchange_rates")
     .select("rate")
-    .eq("rate_date", rateDate)
+    .eq("rate_date", dateOnly)
     .eq("from_currency", fromCurrency)
     .eq("to_currency", toCurrency)
-    .order("rate_date", { ascending: false })
-    .limit(1)
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
-  return Number(data.rate);
+  if (!data) return null;
+
+  const rate = Number(data.rate);
+  return Number.isFinite(rate) ? rate : null;
 }
 ```
 
@@ -277,9 +475,11 @@ import { listUserCategories } from "@/lib/transactions/categories";
 import { getExchangeRate } from "@/lib/transactions/exchangeRates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export async function getTransactionsData(filters: any) {
+export async function getTransactionsData(filters: unknown) {
+  const safeFilters =
+    typeof filters === "object" && filters !== null && !Array.isArray(filters) ? filters : {};
   const [transactions, categories] = await Promise.all([
-    listTransactions(filters),
+    listTransactions(safeFilters),
     listUserCategories(),
   ]);
   return { transactions, categories };
@@ -290,14 +490,17 @@ export async function saveTransaction(input: any) {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("base_currency")
-    .single();
+    .maybeSingle();
 
   if (profileError) throw profileError;
 
-  const rate = await getExchangeRate(input.occurred_at, input.currency, profile.base_currency);
-  const amount_base = Number(input.amount) * Number(rate);
+  const baseCurrency = profile?.base_currency ?? input.currency;
 
-  return upsertTransaction({ ...input, amount_base });
+  const rate = await getExchangeRate(input.occurred_at, input.currency, baseCurrency);
+  const amount_base = rate === null ? Number(input.amount) : Number(input.amount) * Number(rate);
+
+  const transaction = await upsertTransaction({ ...input, amount_base });
+  return { transaction, rateMissing: rate === null };
 }
 
 export async function removeTransaction(id: string) {
