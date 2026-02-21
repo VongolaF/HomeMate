@@ -6,7 +6,8 @@ import { getExchangeRate } from "@/lib/transactions/exchangeRates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function getTransactionsData(filters: unknown) {
-  const safeFilters = typeof filters === "object" && filters !== null ? filters : {};
+  const safeFilters =
+    typeof filters === "object" && filters !== null && !Array.isArray(filters) ? filters : {};
   const [transactions, categories] = await Promise.all([
     listTransactions(safeFilters),
     listUserCategories(),
@@ -29,13 +30,13 @@ export async function saveTransaction(input: {
 
   if (profileError) throw profileError;
 
-  const baseCurrency = profile?.base_currency ?? "CNY";
+  const baseCurrency = profile?.base_currency ?? input.currency;
 
   const rate = await getExchangeRate(input.occurred_at, input.currency, baseCurrency);
   const amount_base = rate === null ? Number(input.amount) : Number(input.amount) * Number(rate);
 
   const transaction = await upsertTransaction({ ...input, amount_base });
-  return { transaction, rateMissing: rate === null };
+  return { transaction, rateMissing: rate === null || !profile?.base_currency };
 }
 
 export async function removeTransaction(id: string) {
