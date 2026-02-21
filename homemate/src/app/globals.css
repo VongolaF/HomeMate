@@ -6,3 +6,9 @@ body {
   background: #fff1f7;
   font-family: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
 }
+
+.dashboard-calendar .ant-picker-content th {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f1f1f;
+}
