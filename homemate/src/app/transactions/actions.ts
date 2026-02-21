@@ -36,7 +36,7 @@ export async function saveTransaction(input: {
   const amount_base = rate === null ? Number(input.amount) : Number(input.amount) * Number(rate);
 
   const transaction = await upsertTransaction({ ...input, amount_base });
-  return { transaction, rateMissing: rate === null || !profile?.base_currency };
+  return { transaction, rateMissing: rate === null };
 }
 
 export async function removeTransaction(id: string) {
