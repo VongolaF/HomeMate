@@ -30,10 +30,14 @@ export async function listTransactions(filters: TransactionFilters = {}) {
   if (filters.startDate) query = query.gte("occurred_at", filters.startDate);
   if (filters.endDate) query = query.lte("occurred_at", filters.endDate);
   if (filters.type) query = query.eq("type", filters.type);
-  if (filters.categoryIds?.length) query = query.in("category_id", filters.categoryIds);
+  if (Array.isArray(filters.categoryIds) && filters.categoryIds.length) {
+    query = query.in("category_id", filters.categoryIds);
+  }
   if (filters.minAmount !== undefined) query = query.gte("amount_base", filters.minAmount);
   if (filters.maxAmount !== undefined) query = query.lte("amount_base", filters.maxAmount);
-  if (filters.tags?.length) query = query.overlaps("tags", filters.tags);
+  if (Array.isArray(filters.tags) && filters.tags.length) {
+    query = query.overlaps("tags", filters.tags);
+  }
 
   const { data, error } = await query.order("occurred_at", { ascending: false });
   if (error) throw error;
