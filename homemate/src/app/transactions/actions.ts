@@ -6,8 +6,9 @@ import { getExchangeRate } from "@/lib/transactions/exchangeRates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function getTransactionsData(filters: unknown) {
+  const safeFilters = typeof filters === "object" && filters !== null ? filters : {};
   const [transactions, categories] = await Promise.all([
-    listTransactions(filters ?? {}),
+    listTransactions(safeFilters),
     listUserCategories(),
   ]);
 
@@ -24,12 +25,14 @@ export async function saveTransaction(input: {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("base_currency")
-    .single();
+    .maybeSingle();
 
   if (profileError) throw profileError;
 
-  const rate = await getExchangeRate(input.occurred_at, input.currency, profile.base_currency);
-  const amount_base = rate ? Number(input.amount) * Number(rate) : Number(input.amount);
+  const baseCurrency = profile?.base_currency ?? "CNY";
+
+  const rate = await getExchangeRate(input.occurred_at, input.currency, baseCurrency);
+  const amount_base = rate === null ? Number(input.amount) : Number(input.amount) * Number(rate);
 
   const transaction = await upsertTransaction({ ...input, amount_base });
   return { transaction, rateMissing: rate === null };
