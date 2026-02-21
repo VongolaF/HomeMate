@@ -1,0 +1,118 @@
+"use client";
+
+import { Alert, Card, DatePicker, Empty, Skeleton } from "antd";
+import dayjs, { type Dayjs } from "dayjs";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { supabase } from "@/lib/supabase/client";
+
+type TransactionRow = { amount_base: number | null; category_id: string | null };
+type CategoryRow = { id: string; name: string };
+
+export default function MonthlyTopExpenseCategories() {
+  const [selectedMonth, setSelectedMonth] = useState<Dayjs>(dayjs());
+  const [data, setData] = useState<Array<{ name: string; value: number }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+
+      const start = selectedMonth.startOf("month").format("YYYY-MM-DD");
+      const end = selectedMonth.endOf("month").format("YYYY-MM-DD");
+
+      const [transactionsRes, categoriesRes] = await Promise.all([
+        supabase
+          .from("transactions")
+          .select("amount_base, category_id")
+          .eq("type", "expense")
+          .gte("occurred_at", start)
+          .lte("occurred_at", end),
+        supabase.from("user_categories").select("id,name").eq("type", "expense"),
+      ]);
+
+      const rows = transactionsRes.data;
+      const fetchError = transactionsRes.error;
+      const categoryRows = categoriesRes.data;
+      const categoriesError = categoriesRes.error;
+
+      if (!isMounted) return;
+      if (fetchError || categoriesError || !rows || !categoryRows) {
+        setData([]);
+        setError("加载没成功");
+        setLoading(false);
+        return;
+      }
+
+      const categoryMap = new Map(
+        (categoryRows as CategoryRow[]).map((category) => [category.id, category.name])
+      );
+
+      const map = new Map<string, number>();
+      (rows as TransactionRow[]).forEach((row) => {
+        const name = row.category_id ? categoryMap.get(row.category_id) ?? "未分类" : "未分类";
+        const amount = Number(row.amount_base || 0);
+        map.set(name, (map.get(name) || 0) + amount);
+      });
+
+      const sorted = Array.from(map.entries())
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 8);
+
+      setData(sorted);
+      setLoading(false);
+    };
+
+    fetchData();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedMonth]);
+
+  const hasData = useMemo(() => data.some((item) => item.value > 0), [data]);
+
+  return (
+    <Card
+      title="当月支出 Top 分类"
+      extra={
+        <DatePicker
+          picker="month"
+          allowClear={false}
+          value={selectedMonth}
+          onChange={(value) => value && setSelectedMonth(value)}
+        />
+      }
+    >
+      {loading ? (
+        <Skeleton active />
+      ) : error ? (
+        <Alert type="error" title={error} showIcon />
+      ) : !hasData ? (
+        <Empty description="还没有数据" />
+      ) : (
+        <div style={{ width: "100%", height: 320 }}>
+          <ResponsiveContainer>
+            <BarChart data={data} layout="vertical" margin={{ top: 16, right: 16, left: 32, bottom: 8 }}>
+              <XAxis type="number" />
+              <YAxis type="category" dataKey="name" width={90} />
+              <Tooltip />
+              <Bar dataKey="value" name="支出" fill="#ff6fae" radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Card>
+  );
+}
