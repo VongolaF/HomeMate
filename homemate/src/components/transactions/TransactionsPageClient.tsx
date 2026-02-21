@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { Button, Space, Typography, message } from "antd";
 import dayjs from "dayjs";
 import type { Transaction, UserCategory } from "@/types/transactions";
@@ -29,14 +29,22 @@ export default function TransactionsPageClient({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | undefined>(undefined);
   const [isPending, startTransition] = useTransition();
+  const requestId = useRef(0);
 
   const refreshData = (nextFilters: TransactionsFilterValues = filters) => {
+    const currentRequest = ++requestId.current;
     startTransition(async () => {
-      const { transactions: nextTransactions, categories: nextCategories } =
-        await getTransactionsData(nextFilters);
-      setTransactions(nextTransactions);
-      setCategories(nextCategories);
-      setFilters(nextFilters);
+      try {
+        const { transactions: nextTransactions, categories: nextCategories } =
+          await getTransactionsData(nextFilters);
+        if (currentRequest !== requestId.current) return;
+        setTransactions(nextTransactions);
+        setCategories(nextCategories);
+        setFilters(nextFilters);
+      } catch (error) {
+        if (currentRequest !== requestId.current) return;
+        message.error("加载失败，请稍后再试");
+      }
     });
   };
 
@@ -94,20 +102,28 @@ export default function TransactionsPageClient({
 
   const handleDelete = (transaction: Transaction) => {
     startTransition(async () => {
-      await removeTransaction(transaction.id);
-      refreshData(filters);
+      try {
+        await removeTransaction(transaction.id);
+        refreshData(filters);
+      } catch (error) {
+        message.error("删除失败，请稍后再试");
+      }
     });
   };
 
   const handleSubmit = (values: TransactionFormValues) => {
     startTransition(async () => {
-      const { rateMissing } = await saveTransaction(values);
-      if (rateMissing) {
-        message.warning("没有找到汇率，已按原币种保存");
+      try {
+        const { rateMissing } = await saveTransaction(values);
+        if (rateMissing) {
+          message.warning("没有找到汇率，已按原币种保存");
+        }
+        setIsModalOpen(false);
+        setEditing(undefined);
+        refreshData(filters);
+      } catch (error) {
+        message.error("保存失败，请稍后再试");
       }
-      setIsModalOpen(false);
-      setEditing(undefined);
-      refreshData(filters);
     });
   };
 
@@ -117,7 +133,7 @@ export default function TransactionsPageClient({
         <Typography.Title level={3} style={{ margin: 0 }}>
           记账
         </Typography.Title>
-        <Button type="primary" onClick={() => setIsModalOpen(true)}>
+        <Button type="primary" onClick={() => setIsModalOpen(true)} disabled={isPending}>
           + 添加记录
         </Button>
       </Space>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Empty, Space, Tag, Typography } from "antd";
+import { Button, Card, Empty, Popconfirm, Space, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 import type { Transaction, UserCategory } from "@/types/transactions";
 
@@ -84,9 +84,14 @@ export default function TransactionsList({
                           </Typography.Text>
                           {onEdit ? <Button onClick={() => onEdit(item)}>编辑</Button> : null}
                           {onDelete ? (
-                            <Button danger onClick={() => onDelete(item)}>
-                              删除
-                            </Button>
+                            <Popconfirm
+                              title="确认删除这条记录吗？"
+                              okText="删除"
+                              cancelText="取消"
+                              onConfirm={() => onDelete(item)}
+                            >
+                              <Button danger>删除</Button>
+                            </Popconfirm>
                           ) : null}
                         </Space>
                       </div>

@@ -56,19 +56,19 @@ export default function TransactionsSummary({
       }}
     >
       <Card>
-        <Typography.Text type="secondary">本月收入</Typography.Text>
+        <Typography.Text type="secondary">当前筛选收入</Typography.Text>
         <Typography.Title level={3} style={{ margin: "8px 0 0" }}>
           ¥{totals.income.toFixed(2)}
         </Typography.Title>
       </Card>
       <Card>
-        <Typography.Text type="secondary">本月支出</Typography.Text>
+        <Typography.Text type="secondary">当前筛选支出</Typography.Text>
         <Typography.Title level={3} style={{ margin: "8px 0 0" }}>
           ¥{totals.expense.toFixed(2)}
         </Typography.Title>
       </Card>
       <Card>
-        <Typography.Text type="secondary">本月结余</Typography.Text>
+        <Typography.Text type="secondary">当前筛选结余</Typography.Text>
         <Typography.Title level={3} style={{ margin: "8px 0 0" }}>
           ¥{totals.net.toFixed(2)}
         </Typography.Title>
