@@ -8,9 +8,12 @@ export async function getExchangeRate(
   if (fromCurrency === toCurrency) return 1;
 
   const dateOnly = rateDate.split("T")[0];
-  const isValidDate = /^\d{4}-\d{2}-\d{2}$/.test(dateOnly);
+  const isValidFormat = /^\d{4}-\d{2}-\d{2}$/.test(dateOnly);
+  if (!isValidFormat) return null;
 
-  if (!isValidDate) return null;
+  const parsedDate = new Date(`${dateOnly}T00:00:00Z`);
+  if (Number.isNaN(parsedDate.getTime())) return null;
+  if (parsedDate.toISOString().slice(0, 10) !== dateOnly) return null;
 
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
