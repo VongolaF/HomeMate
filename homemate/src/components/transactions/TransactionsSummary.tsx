@@ -11,6 +11,7 @@ import {
   Line,
   XAxis,
   YAxis,
+  Legend,
 } from "recharts";
 
 const COLORS = ["#ff8fb1", "#ffd39f", "#9ad0ff", "#c3f0ca", "#c9b7ff"];
@@ -47,7 +48,13 @@ export default function TransactionsSummary({
   const hasTrendData = trendData.some((item) => item.income > 0 || item.expense > 0);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: 16,
+      }}
+    >
       <Card>
         <Typography.Text type="secondary">本月收入</Typography.Text>
         <Typography.Title level={3} style={{ margin: "8px 0 0" }}>
@@ -77,6 +84,7 @@ export default function TransactionsSummary({
                   ))}
                 </Pie>
                 <Tooltip />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -92,6 +100,7 @@ export default function TransactionsSummary({
                 <XAxis dataKey="day" tickMargin={8} />
                 <YAxis tickMargin={8} />
                 <Tooltip />
+                <Legend />
                 <Line type="monotone" dataKey="expense" stroke="#ff6fae" strokeWidth={2} />
                 <Line type="monotone" dataKey="income" stroke="#7c9cff" strokeWidth={2} />
               </LineChart>

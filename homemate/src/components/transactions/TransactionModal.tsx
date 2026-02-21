@@ -1,6 +1,7 @@
 "use client";
 
 import type { Dayjs } from "dayjs";
+import { useEffect } from "react";
 import dayjs from "dayjs";
 import { Button, DatePicker, Form, Input, InputNumber, Modal, Select, Segmented } from "antd";
 import type { Transaction, UserCategory } from "@/types/transactions";
@@ -42,6 +43,20 @@ export default function TransactionModal({
 }: TransactionModalProps) {
   const [form] = Form.useForm<FormValues>();
 
+  useEffect(() => {
+    if (!open) return;
+
+    form.setFieldsValue({
+      type: initialValues?.type ?? "expense",
+      amount: initialValues?.amount ?? 0,
+      currency: initialValues?.currency ?? "CNY",
+      occurred_at: initialValues?.occurred_at ? dayjs(initialValues.occurred_at) : dayjs(),
+      category_id: initialValues?.category_id ?? undefined,
+      note: initialValues?.note ?? "",
+      tags: initialValues?.tags ?? [],
+    });
+  }, [form, initialValues, open]);
+
   const handleOk = async () => {
     const values = await form.validateFields();
     onSubmit({
@@ -70,17 +85,6 @@ export default function TransactionModal({
       <Form
         form={form}
         layout="vertical"
-        initialValues={{
-          type: initialValues?.type ?? "expense",
-          amount: initialValues?.amount ?? 0,
-          currency: initialValues?.currency ?? "CNY",
-          occurred_at: initialValues?.occurred_at
-            ? dayjs(initialValues.occurred_at)
-            : dayjs(),
-          category_id: initialValues?.category_id ?? undefined,
-          note: initialValues?.note ?? "",
-          tags: initialValues?.tags ?? [],
-        }}
       >
         <Form.Item label="类型" name="type" rules={[{ required: true }]}>
           <Segmented

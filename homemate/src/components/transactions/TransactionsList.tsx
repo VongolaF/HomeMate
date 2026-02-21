@@ -79,7 +79,8 @@ export default function TransactionsList({
                         </div>
                         <Space>
                           <Typography.Text>
-                            {item.type === "expense" ? "-" : "+"}¥{Number(item.amount_base).toFixed(2)}
+                            {item.type === "expense" ? "-" : "+"}¥
+                            {Number(item.amount_base ?? item.amount ?? 0).toFixed(2)}
                           </Typography.Text>
                           {onEdit ? <Button onClick={() => onEdit(item)}>编辑</Button> : null}
                           {onDelete ? (

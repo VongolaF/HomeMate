@@ -52,7 +52,13 @@ export default function TransactionsFilters({ categories, onApply }: Transaction
   return (
     <Card size="small" title="筛选">
       <Form form={form} layout="vertical" onFinish={handleFinish}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 16,
+          }}
+        >
           <Form.Item label="日期范围" name="dateRange">
             <DatePicker.RangePicker style={{ width: "100%" }} />
           </Form.Item>
@@ -78,7 +84,13 @@ export default function TransactionsFilters({ categories, onApply }: Transaction
             />
           </Form.Item>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 16,
+          }}
+        >
           <Form.Item label="最小金额" name="minAmount">
             <InputNumber min={0} style={{ width: "100%" }} placeholder="0" />
           </Form.Item>
