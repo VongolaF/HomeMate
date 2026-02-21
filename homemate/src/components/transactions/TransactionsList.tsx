@@ -32,7 +32,7 @@ export default function TransactionsList({
       {transactions.length === 0 ? (
         <Empty description="暂无记账记录" />
       ) : (
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           {dates.map((date) => {
             const items = grouped[date];
             const subtotal = items.reduce((sum, item) => sum + Number(item.amount_base || 0), 0);
@@ -42,7 +42,7 @@ export default function TransactionsList({
                   <Typography.Text strong>{dayjs(date).format("YYYY-MM-DD")}</Typography.Text>
                   <Typography.Text type="secondary">合计 ¥{subtotal.toFixed(2)}</Typography.Text>
                 </Space>
-                <Space direction="vertical" size={12} style={{ width: "100%", marginTop: 12 }}>
+                <Space orientation="vertical" size={12} style={{ width: "100%", marginTop: 12 }}>
                   {items.map((item) => {
                     const category = item.category_id ? categoryMap.get(item.category_id) : null;
                     return (

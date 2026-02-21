@@ -19,7 +19,7 @@ where t.category_id is not null;
 with mapping as (
   select t.user_id,
          t.category_id as old_category_id,
-         min(u.id) as new_category_id
+         min(u.id::text)::uuid as new_category_id
   from public.transactions t
   join public.categories c on c.id = t.category_id
   join public.user_categories u

@@ -1,16 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Space, Typography, message } from "antd";
-import dayjs from "dayjs";
 import type { Transaction, UserCategory } from "@/types/transactions";
-import {
-  disableCategory,
-  getTransactionsData,
-  removeTransaction,
-  saveCategory,
-  saveTransaction,
-} from "@/app/transactions/actions";
+import { supabase } from "@/lib/supabase/client";
+import { useAuth } from "@/components/AuthProvider";
 import TransactionsFilters, {
   type TransactionsFilterValues,
 } from "@/components/transactions/TransactionsFilters";
@@ -24,16 +18,17 @@ import CategoryManager, {
 } from "@/components/transactions/CategoryManager";
 
 interface TransactionsPageClientProps {
-  initialTransactions: Transaction[];
-  initialCategories: UserCategory[];
+  initialTransactions?: Transaction[];
+  initialCategories?: UserCategory[];
 }
 
 export default function TransactionsPageClient({
   initialTransactions,
   initialCategories,
 }: TransactionsPageClientProps) {
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
-  const [categories, setCategories] = useState<UserCategory[]>(initialCategories);
+  const { user, loading } = useAuth();
+  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions ?? []);
+  const [categories, setCategories] = useState<UserCategory[]>(initialCategories ?? []);
   const [filters, setFilters] = useState<TransactionsFilterValues>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
@@ -41,15 +36,83 @@ export default function TransactionsPageClient({
   const [isPending, startTransition] = useTransition();
   const requestId = useRef(0);
 
+  const getExchangeRate = async (
+    rateDate: string,
+    fromCurrency: string,
+    toCurrency: string
+  ): Promise<number | null> => {
+    if (fromCurrency === toCurrency) return 1;
+
+    const dateOnly = rateDate.split("T")[0];
+    const isValidFormat = /^\d{4}-\d{2}-\d{2}$/.test(dateOnly);
+    if (!isValidFormat) return null;
+
+    const parsedDate = new Date(`${dateOnly}T00:00:00Z`);
+    if (Number.isNaN(parsedDate.getTime())) return null;
+    if (parsedDate.toISOString().slice(0, 10) !== dateOnly) return null;
+
+    const { data, error } = await supabase
+      .from("exchange_rates")
+      .select("rate")
+      .eq("rate_date", dateOnly)
+      .eq("from_currency", fromCurrency)
+      .eq("to_currency", toCurrency)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    const rate = Number(data.rate);
+    return Number.isFinite(rate) ? rate : null;
+  };
+
   const refreshData = (nextFilters: TransactionsFilterValues = filters) => {
+    if (!user) return;
     const currentRequest = ++requestId.current;
     startTransition(async () => {
       try {
-        const { transactions: nextTransactions, categories: nextCategories } =
-          await getTransactionsData(nextFilters);
+        let transactionsQuery = supabase
+          .from("transactions")
+          .select("*")
+          .eq("user_id", user.id);
+
+        if (nextFilters.startDate) {
+          transactionsQuery = transactionsQuery.gte("occurred_at", nextFilters.startDate);
+        }
+        if (nextFilters.endDate) {
+          transactionsQuery = transactionsQuery.lte("occurred_at", nextFilters.endDate);
+        }
+        if (nextFilters.type) {
+          transactionsQuery = transactionsQuery.eq("type", nextFilters.type);
+        }
+        if (Array.isArray(nextFilters.categoryIds) && nextFilters.categoryIds.length) {
+          transactionsQuery = transactionsQuery.in("category_id", nextFilters.categoryIds);
+        }
+        if (nextFilters.minAmount !== undefined) {
+          transactionsQuery = transactionsQuery.gte("amount_base", nextFilters.minAmount);
+        }
+        if (nextFilters.maxAmount !== undefined) {
+          transactionsQuery = transactionsQuery.lte("amount_base", nextFilters.maxAmount);
+        }
+        if (Array.isArray(nextFilters.tags) && nextFilters.tags.length) {
+          transactionsQuery = transactionsQuery.overlaps("tags", nextFilters.tags);
+        }
+
+        const [{ data: nextTransactions, error: transactionsError }, { data: nextCategories, error: categoriesError }] =
+          await Promise.all([
+            transactionsQuery.order("occurred_at", { ascending: false }),
+            supabase
+              .from("user_categories")
+              .select("*")
+              .eq("user_id", user.id)
+              .order("sort_order", { ascending: true }),
+          ]);
+
+        if (transactionsError) throw transactionsError;
+        if (categoriesError) throw categoriesError;
         if (currentRequest !== requestId.current) return;
-        setTransactions(nextTransactions);
-        setCategories(nextCategories);
+        setTransactions((nextTransactions ?? []) as Transaction[]);
+        setCategories((nextCategories ?? []) as UserCategory[]);
         setFilters(nextFilters);
       } catch (error) {
         if (currentRequest !== requestId.current) return;
@@ -57,6 +120,22 @@ export default function TransactionsPageClient({
       }
     });
   };
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      setTransactions([]);
+      setCategories([]);
+      return;
+    }
+    refreshData(filters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, user?.id]);
+
+  const activeCategories = useMemo(
+    () => categories.filter((category) => category.is_active),
+    [categories]
+  );
 
   const totals = useMemo(() => {
     let income = 0;
@@ -69,37 +148,6 @@ export default function TransactionsPageClient({
     return { income, expense, net: income - expense };
   }, [transactions]);
 
-  const categoryBreakdown = useMemo(() => {
-    const categoryMap = new Map(categories.map((category) => [category.id, category.name]));
-    const totalsMap = new Map<string, number>();
-    transactions.forEach((transaction) => {
-      if (transaction.type !== "expense") return;
-      const name = transaction.category_id
-        ? categoryMap.get(transaction.category_id) ?? "未分类"
-        : "未分类";
-      const amount = Number(transaction.amount_base ?? transaction.amount ?? 0);
-      totalsMap.set(name, (totalsMap.get(name) ?? 0) + amount);
-    });
-    return Array.from(totalsMap.entries()).map(([name, value]) => ({ name, value }));
-  }, [categories, transactions]);
-
-  const trendData = useMemo(() => {
-    const buckets = new Map<string, { income: number; expense: number }>();
-    transactions.forEach((transaction) => {
-      const dateKey = dayjs(transaction.occurred_at).format("YYYY-MM-DD");
-      if (!buckets.has(dateKey)) {
-        buckets.set(dateKey, { income: 0, expense: 0 });
-      }
-      const bucket = buckets.get(dateKey)!;
-      const amount = Number(transaction.amount_base ?? transaction.amount ?? 0);
-      if (transaction.type === "income") bucket.income += amount;
-      else bucket.expense += amount;
-    });
-
-    return Array.from(buckets.entries())
-      .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([day, values]) => ({ day: dayjs(day).format("MM/DD"), ...values }));
-  }, [transactions]);
 
   const handleApplyFilters = (nextFilters: TransactionsFilterValues) => {
     refreshData(nextFilters);
@@ -111,9 +159,15 @@ export default function TransactionsPageClient({
   };
 
   const handleDelete = (transaction: Transaction) => {
+    if (!user) return;
     startTransition(async () => {
       try {
-        await removeTransaction(transaction.id);
+        const { error } = await supabase
+          .from("transactions")
+          .delete()
+          .eq("id", transaction.id)
+          .eq("user_id", user.id);
+        if (error) throw error;
         refreshData(filters);
       } catch (error) {
         message.error("删除失败，请稍后再试");
@@ -122,9 +176,38 @@ export default function TransactionsPageClient({
   };
 
   const handleSubmit = (values: TransactionFormValues) => {
+    if (!user) return;
     startTransition(async () => {
       try {
-        const { rateMissing } = await saveTransaction(values);
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("base_currency")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profileError) throw profileError;
+
+        const baseCurrency = profile?.base_currency ?? values.currency;
+        const rate = await getExchangeRate(values.occurred_at, values.currency, baseCurrency);
+        const amount_base =
+          rate === null ? Number(values.amount) : Number(values.amount) * Number(rate);
+
+        const payload = {
+          ...values,
+          id: editing?.id,
+          user_id: user.id,
+          category_id: values.category_id ?? null,
+          tags: values.tags ?? null,
+          amount_base,
+        };
+
+        const { error } = await supabase
+          .from("transactions")
+          .upsert(payload)
+          .select("*")
+          .single();
+        if (error) throw error;
+        const rateMissing = rate === null;
         if (rateMissing) {
           message.warning("没有找到汇率，已按原币种保存");
         }
@@ -138,9 +221,19 @@ export default function TransactionsPageClient({
   };
 
   const handleSaveCategory = (values: CategoryFormValues) => {
+    if (!user) return;
     startTransition(async () => {
       try {
-        await saveCategory(values);
+        const { error } = await supabase
+          .from("user_categories")
+          .upsert({
+            ...values,
+            user_id: user.id,
+            icon: values.icon ?? null,
+          })
+          .select("*")
+          .single();
+        if (error) throw error;
         refreshData(filters);
       } catch (error) {
         message.error("分类保存失败，请稍后再试");
@@ -149,9 +242,15 @@ export default function TransactionsPageClient({
   };
 
   const handleDeactivateCategory = (categoryId: string) => {
+    if (!user) return;
     startTransition(async () => {
       try {
-        await disableCategory(categoryId);
+        const { error } = await supabase
+          .from("user_categories")
+          .update({ is_active: false })
+          .eq("id", categoryId)
+          .eq("user_id", user.id);
+        if (error) throw error;
         refreshData(filters);
       } catch (error) {
         message.error("分类停用失败，请稍后再试");
@@ -175,8 +274,8 @@ export default function TransactionsPageClient({
         </Space>
       </Space>
 
-      <TransactionsSummary totals={totals} categoryBreakdown={categoryBreakdown} trendData={trendData} />
-      <TransactionsFilters categories={categories} onApply={handleApplyFilters} />
+      <TransactionsSummary totals={totals} />
+      <TransactionsFilters categories={activeCategories} onApply={handleApplyFilters} />
       <TransactionsList
         transactions={transactions}
         categories={categories}
@@ -191,7 +290,7 @@ export default function TransactionsPageClient({
           setEditing(undefined);
         }}
         onSubmit={handleSubmit}
-        categories={categories}
+        categories={activeCategories}
         initialValues={editing}
       />
 

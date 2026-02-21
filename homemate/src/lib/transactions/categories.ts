@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { UserCategory } from "@/types/transactions";
 
 export async function listUserCategories(options: { includeInactive?: boolean } = {}) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
 
   if (userError) throw userError;
@@ -32,10 +32,10 @@ export async function listUserCategories(options: { includeInactive?: boolean } 
 }
 
 export async function upsertUserCategory(input: Partial<UserCategory>) {
-  const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  const userId = data.user?.id;
+  const supabase = await createSupabaseServerClient();
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const userId = userData.user?.id;
 
   if (!userId) {
     throw new Error("Authenticated user required to upsert category.");
@@ -52,7 +52,7 @@ export async function upsertUserCategory(input: Partial<UserCategory>) {
 }
 
 export async function deactivateUserCategory(id: string) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error: userError } = await supabase.auth.getUser();
   if (userError) throw userError;
   const userId = data.user?.id;

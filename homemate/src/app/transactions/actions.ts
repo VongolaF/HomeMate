@@ -26,7 +26,7 @@ export async function saveTransaction(input: {
   occurred_at: string;
   [key: string]: unknown;
 }) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("base_currency")

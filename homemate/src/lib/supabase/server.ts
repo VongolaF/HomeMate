@@ -3,8 +3,8 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-export function createSupabaseServerClient() {
-	const cookieStore = cookies();
+export async function createSupabaseServerClient() {
+	const cookieStore = await cookies();
 
 	return createServerClient(
 		process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,8 +33,8 @@ export function createSupabaseServerClient() {
 	);
 }
 
-export function createSupabaseServerReadClient() {
-	const cookieStore = cookies();
+export async function createSupabaseServerReadClient() {
+	const cookieStore = await cookies();
 
 	return createServerClient(
 		process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -14,7 +14,7 @@ export interface TransactionFilters {
 }
 
 export async function listTransactions(filters: TransactionFilters = {}) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
 
   if (userError) throw userError;
@@ -45,7 +45,7 @@ export async function listTransactions(filters: TransactionFilters = {}) {
 }
 
 export async function upsertTransaction(input: Partial<Transaction>) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error: userError } = await supabase.auth.getUser();
 
   if (userError) throw userError;
@@ -67,7 +67,7 @@ export async function upsertTransaction(input: Partial<Transaction>) {
 }
 
 export async function deleteTransaction(id: string) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error: userError } = await supabase.auth.getUser();
 
   if (userError) throw userError;

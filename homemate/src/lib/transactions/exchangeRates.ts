@@ -15,7 +15,7 @@ export async function getExchangeRate(
   if (Number.isNaN(parsedDate.getTime())) return null;
   if (parsedDate.toISOString().slice(0, 10) !== dateOnly) return null;
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("exchange_rates")
     .select("rate")
