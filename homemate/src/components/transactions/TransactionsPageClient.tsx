@@ -4,7 +4,13 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { Button, Space, Typography, message } from "antd";
 import dayjs from "dayjs";
 import type { Transaction, UserCategory } from "@/types/transactions";
-import { getTransactionsData, removeTransaction, saveTransaction } from "@/app/transactions/actions";
+import {
+  disableCategory,
+  getTransactionsData,
+  removeTransaction,
+  saveCategory,
+  saveTransaction,
+} from "@/app/transactions/actions";
 import TransactionsFilters, {
   type TransactionsFilterValues,
 } from "@/components/transactions/TransactionsFilters";
@@ -13,6 +19,9 @@ import TransactionsSummary from "@/components/transactions/TransactionsSummary";
 import TransactionModal, {
   type TransactionFormValues,
 } from "@/components/transactions/TransactionModal";
+import CategoryManager, {
+  type CategoryFormValues,
+} from "@/components/transactions/CategoryManager";
 
 interface TransactionsPageClientProps {
   initialTransactions: Transaction[];
@@ -27,6 +36,7 @@ export default function TransactionsPageClient({
   const [categories, setCategories] = useState<UserCategory[]>(initialCategories);
   const [filters, setFilters] = useState<TransactionsFilterValues>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | undefined>(undefined);
   const [isPending, startTransition] = useTransition();
   const requestId = useRef(0);
@@ -127,15 +137,42 @@ export default function TransactionsPageClient({
     });
   };
 
+  const handleSaveCategory = (values: CategoryFormValues) => {
+    startTransition(async () => {
+      try {
+        await saveCategory(values);
+        refreshData(filters);
+      } catch (error) {
+        message.error("分类保存失败，请稍后再试");
+      }
+    });
+  };
+
+  const handleDeactivateCategory = (categoryId: string) => {
+    startTransition(async () => {
+      try {
+        await disableCategory(categoryId);
+        refreshData(filters);
+      } catch (error) {
+        message.error("分类停用失败，请稍后再试");
+      }
+    });
+  };
+
   return (
     <div style={{ display: "grid", gap: 24 }}>
       <Space align="center" style={{ justifyContent: "space-between" }}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           记账
         </Typography.Title>
-        <Button type="primary" onClick={() => setIsModalOpen(true)} disabled={isPending}>
-          + 添加记录
-        </Button>
+        <Space>
+          <Button onClick={() => setIsCategoryOpen(true)} disabled={isPending}>
+            分类管理
+          </Button>
+          <Button type="primary" onClick={() => setIsModalOpen(true)} disabled={isPending}>
+            + 添加记录
+          </Button>
+        </Space>
       </Space>
 
       <TransactionsSummary totals={totals} categoryBreakdown={categoryBreakdown} trendData={trendData} />
@@ -156,6 +193,14 @@ export default function TransactionsPageClient({
         onSubmit={handleSubmit}
         categories={categories}
         initialValues={editing}
+      />
+
+      <CategoryManager
+        open={isCategoryOpen}
+        onClose={() => setIsCategoryOpen(false)}
+        categories={categories}
+        onSave={handleSaveCategory}
+        onDeactivate={handleDeactivateCategory}
       />
 
       {isPending ? <Typography.Text type="secondary">更新中...</Typography.Text> : null}

@@ -1,7 +1,11 @@
 "use server";
 
 import { listTransactions, upsertTransaction, deleteTransaction } from "@/lib/transactions/transactions";
-import { listUserCategories } from "@/lib/transactions/categories";
+import {
+  listUserCategories,
+  upsertUserCategory,
+  deactivateUserCategory,
+} from "@/lib/transactions/categories";
 import { getExchangeRate } from "@/lib/transactions/exchangeRates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -41,4 +45,19 @@ export async function saveTransaction(input: {
 
 export async function removeTransaction(id: string) {
   return deleteTransaction(id);
+}
+
+export async function saveCategory(input: {
+  id?: string;
+  name: string;
+  icon?: string | null;
+  type: "income" | "expense";
+  sort_order?: number;
+  is_active?: boolean;
+}) {
+  return upsertUserCategory(input);
+}
+
+export async function disableCategory(categoryId: string) {
+  return deactivateUserCategory(categoryId);
 }
