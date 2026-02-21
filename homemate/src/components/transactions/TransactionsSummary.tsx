@@ -1,7 +1,17 @@
 "use client";
 
 import { Card, Empty, Space, Typography } from "antd";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const COLORS = ["#ff8fb1", "#ffd39f", "#9ad0ff", "#c3f0ca", "#c9b7ff"];
 
@@ -16,13 +26,25 @@ export interface SummaryCategoryItem {
   value: number;
 }
 
+export interface SummaryTrendPoint {
+  day: string;
+  income: number;
+  expense: number;
+}
+
 interface TransactionsSummaryProps {
   totals: SummaryTotals;
   categoryBreakdown: SummaryCategoryItem[];
+  trendData: SummaryTrendPoint[];
 }
 
-export default function TransactionsSummary({ totals, categoryBreakdown }: TransactionsSummaryProps) {
+export default function TransactionsSummary({
+  totals,
+  categoryBreakdown,
+  trendData,
+}: TransactionsSummaryProps) {
   const hasCategoryData = categoryBreakdown.some((item) => item.value > 0);
+  const hasTrendData = trendData.some((item) => item.income > 0 || item.expense > 0);
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
@@ -60,6 +82,23 @@ export default function TransactionsSummary({ totals, categoryBreakdown }: Trans
           </div>
         ) : (
           <Empty description="还没有分类数据" />
+        )}
+      </Card>
+      <Card title="本月趋势" style={{ gridColumn: "1 / -1" }}>
+        {hasTrendData ? (
+          <div style={{ width: "100%", height: 240 }}>
+            <ResponsiveContainer>
+              <LineChart data={trendData} margin={{ top: 16, right: 16, left: 8, bottom: 8 }}>
+                <XAxis dataKey="day" tickMargin={8} />
+                <YAxis tickMargin={8} />
+                <Tooltip />
+                <Line type="monotone" dataKey="expense" stroke="#ff6fae" strokeWidth={2} />
+                <Line type="monotone" dataKey="income" stroke="#7c9cff" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <Empty description="还没有趋势数据" />
         )}
       </Card>
     </div>
