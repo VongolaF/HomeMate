@@ -92,16 +92,14 @@ export async function GET(request: Request) {
   const providedSecret =
     url.searchParams.get("secret") || request.headers.get("x-cron-secret");
 
-  if (expectedSecret) {
-    if (!providedSecret || providedSecret !== expectedSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  } else {
-    // Fallback for local/dev if no secret is configured.
-    const userAgent = request.headers.get("user-agent") ?? "";
-    if (!userAgent.includes("vercel-cron/1.0")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const userAgent = request.headers.get("user-agent") ?? "";
+  const isVercelCron = userAgent.includes("vercel-cron/1.0");
+
+  const hasValidSecret =
+    !!expectedSecret && !!providedSecret && providedSecret === expectedSecret;
+
+  if (!hasValidSecret && !isVercelCron) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   if (!expectedSecret) {
