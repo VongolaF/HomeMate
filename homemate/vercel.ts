@@ -4,7 +4,7 @@ const cronPath = cronSecret
   ? `/api/cron/health-weekly?secret=${encodeURIComponent(cronSecret)}`
   : "/api/cron/health-weekly";
 
-export default {
+export const config = {
   crons: [
     // Vercel cron timezone is always UTC.
     // 21:00 Asia/Shanghai (UTC+8) => 13:00 UTC, every Sunday.
