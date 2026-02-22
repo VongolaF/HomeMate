@@ -89,11 +89,29 @@ export default function YearlyIncomeExpenseChart({
       ) : !hasData ? (
         <Empty description="还没有数据" />
       ) : (
-        <div style={{ width: "100%", height: 320 }}>
+        <div style={{ width: "100%", height: 350 }}>
           <ResponsiveContainer>
-            <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
-              <XAxis dataKey="month" tickMargin={8} />
-              <YAxis tickMargin={8} />
+            <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 12 }}>
+              <XAxis
+                dataKey="month"
+                tickMargin={8}
+                label={{
+                  value: "月 份",
+                  position: "end",
+                  dy: 20,
+                  style: { fontSize: 14, fontWeight: "bold", fill: "#000" },
+                }}
+              />
+              <YAxis
+                tickMargin={8}
+                label={{
+                  value: "金 额",
+                  angle: 0,
+                  position: "insideTop",
+                  dy: -32,
+                  style: { fontSize: 14, fontWeight: "bold", fill: "#000" },
+                }}
+              />
               <Tooltip />
               <Legend align="center" verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
               <Bar dataKey="expense" name="支出" fill="#ff6fae" radius={[6, 6, 0, 0]} />

@@ -2,6 +2,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, it, vi } from "vitest";
 import ProfilePage from "./page";
 
+vi.mock("antd-img-crop", () => ({
+  default: ({ children }: { children: unknown }) => children,
+}));
+
 const pushMock = vi.fn();
 const fromMock = vi.fn();
 const selectMock = vi.fn();
@@ -48,7 +52,6 @@ describe("ProfilePage", () => {
         id: "user-1",
         display_name: "Test User",
         base_currency: "CNY",
-        role: "user",
         username: "tester",
       },
       error: null,

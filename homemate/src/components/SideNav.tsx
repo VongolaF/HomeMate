@@ -8,6 +8,7 @@ import {
   ProfileOutlined,
   WalletOutlined,
   DashboardOutlined,
+  UserOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from "@ant-design/icons";
@@ -20,6 +21,7 @@ const items = [
   { key: "analytics", icon: <PieChartOutlined />, label: "统计报表", href: "/analytics" },
   { key: "events", icon: <CalendarOutlined />, label: "日历提醒", href: "/events" },
   { key: "savings", icon: <ProfileOutlined />, label: "存钱目标", href: "/savings" },
+  { key: "profile", icon: <UserOutlined />, label: "个人中心", href: "/profile" },
 ];
 
 const pathToKey = (pathname: string) => {
@@ -28,6 +30,7 @@ const pathToKey = (pathname: string) => {
   if (pathname.startsWith("/analytics")) return "analytics";
   if (pathname.startsWith("/events")) return "events";
   if (pathname.startsWith("/savings")) return "savings";
+  if (pathname.startsWith("/profile")) return "profile";
   return "home";
 };
 

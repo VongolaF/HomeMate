@@ -16,6 +16,7 @@
     "@supabase/ssr": "^0.6.0",
     "@supabase/supabase-js": "^2.94.1",
     "antd": "^6.2.3",
+    "antd-img-crop": "^4.29.0",
     "dayjs": "^1.11.19",
     "next": "16.1.6",
     "react": "19.2.3",

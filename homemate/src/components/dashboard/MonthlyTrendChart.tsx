@@ -103,17 +103,17 @@ export default function MonthlyTrendChart() {
       ) : !hasData ? (
         <Empty description="还没有数据" />
       ) : (
-        <div style={{ width: "100%", height: 320 }}>
+        <div style={{ width: "100%", height: 400 }}>
           <ResponsiveContainer>
-            <LineChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+            <LineChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 12 }}>
               <XAxis
                 dataKey="day"
                 tickMargin={8}
-                label={{ value: "日期", position: "end", dy: 18 }}
+                label={{ value: "日 期", position: "end", dy: 20, style: { fontSize: 14, fontWeight: "bold", fill: "#000" } }}
               />
               <YAxis
                 tickMargin={8}
-                label={{ value: "金额", angle: 0, position: "insideTop", dy: -28 }}
+                label={{ value: "金 额", angle: 0, position: "insideTop", dy: -32, style: { fontSize: 14, fontWeight: "bold", fill: "#000" } }}
               />
               <Tooltip />
               <Legend

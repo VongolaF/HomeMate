@@ -37,11 +37,11 @@ export default function AnalyticsPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
         <YearlyIncomeExpenseChart selectedYear={selectedYear} />
-        <YearlyNetTrendChart selectedYear={selectedYear} />
+        <YearlyIncomeExpenseRatioDonut selectedYear={selectedYear} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <YearlyIncomeExpenseRatioDonut selectedYear={selectedYear} />
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
+        <YearlyNetTrendChart selectedYear={selectedYear} />
         <SpendInsightsMoM
           selectedMonth={selectedMonth}
           onSelectedMonthChange={setSelectedMonth}

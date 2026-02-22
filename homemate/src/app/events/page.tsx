@@ -9,10 +9,10 @@ import {
   Calendar,
   Card,
   DatePicker,
+  Divider,
   Empty,
   Form,
   Input,
-  List,
   Modal,
   Popconfirm,
   Switch,
@@ -365,52 +365,53 @@ export default function EventsPage() {
         }
       >
         {selectedEvents.length ? (
-          <List
-            dataSource={selectedEvents}
-            renderItem={(item) => {
+          <Space
+            direction="vertical"
+            style={{ width: "100%" }}
+            split={<Divider style={{ margin: "12px 0" }} />}
+          >
+            {selectedEvents.map((item) => {
               const priority = item.priority ?? "medium";
               const isDone = (item.status ?? "open") === "done";
               return (
-                <List.Item>
-                  <List.Item.Meta
-                    title={
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                        <Space size={8}>
-                          <Badge status={PRIORITY_STATUS[priority]} />
-                          <Typography.Text strong delete={isDone}>
-                            {item.title}
-                          </Typography.Text>
-                        </Space>
-                        <Space size={8}>
-                          <Space size={6}>
-                            <Typography.Text type="secondary">完成</Typography.Text>
-                            <Switch
-                              checked={isDone}
-                              onChange={(checked) => handleToggleDone(item, checked)}
-                            />
-                          </Space>
-                          <Button size="small" onClick={() => handleOpenEditModal(item)}>
-                            编辑
-                          </Button>
-                          <Popconfirm
-                            title="确认删除该提醒事项吗？"
-                            okText="删除"
-                            cancelText="取消"
-                            onConfirm={() => handleDelete(item)}
-                          >
-                            <Button size="small" danger>
-                              删除
-                            </Button>
-                          </Popconfirm>
-                        </Space>
-                      </div>
-                    }
-                    description={item.description ? item.description : ""}
-                  />
-                </List.Item>
+                <div key={item.id} style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <Space size={8}>
+                      <Badge status={PRIORITY_STATUS[priority]} />
+                      <Typography.Text strong delete={isDone}>
+                        {item.title}
+                      </Typography.Text>
+                    </Space>
+                    <Space size={8}>
+                      <Space size={6}>
+                        <Typography.Text type="secondary">完成</Typography.Text>
+                        <Switch
+                          checked={isDone}
+                          onChange={(checked) => handleToggleDone(item, checked)}
+                        />
+                      </Space>
+                      <Button size="small" onClick={() => handleOpenEditModal(item)}>
+                        编辑
+                      </Button>
+                      <Popconfirm
+                        title="确认删除该提醒事项吗？"
+                        okText="删除"
+                        cancelText="取消"
+                        onConfirm={() => handleDelete(item)}
+                      >
+                        <Button size="small" danger>
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    </Space>
+                  </div>
+                  {item.description ? (
+                    <Typography.Text type="secondary">{item.description}</Typography.Text>
+                  ) : null}
+                </div>
               );
-            }}
-          />
+            })}
+          </Space>
         ) : (
           <Empty description="当天暂无提醒事项" />
         )}
@@ -438,9 +439,9 @@ export default function EventsPage() {
           <Form.Item name="priority" label="优先级" rules={[{ required: true }]}> 
             <Select
               options={[
-                { value: "high", label: "高（红）" },
-                { value: "medium", label: "中（橙）" },
-                { value: "low", label: "低（绿）" },
+                { value: "high", label: "高 (红 )" },
+                { value: "medium", label: "中 (橙 )" },
+                { value: "low", label: "低 (绿 )" },
               ]}
             />
           </Form.Item>

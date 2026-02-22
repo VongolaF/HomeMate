@@ -90,7 +90,7 @@ export default function YearlyIncomeExpenseRatioDonut({
                 ))}
               </Pie>
               <Tooltip />
-              <Legend />
+              <Legend align="center" verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
             </PieChart>
           </ResponsiveContainer>
         </div>

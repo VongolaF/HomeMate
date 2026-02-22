@@ -8,6 +8,11 @@ import { supabase } from "@/lib/supabase/client";
 
 const COLORS = ["#ff8fb1", "#ffd39f", "#9ad0ff", "#c3f0ca", "#c9b7ff"];
 
+type ExpenseCategoryRow = {
+  amount_base: number | null;
+  category?: { name?: string | null } | Array<{ name?: string | null }> | null;
+};
+
 export default function CategoryPieChart() {
   const [selectedMonth, setSelectedMonth] = useState<Dayjs>(dayjs());
   const [data, setData] = useState<Array<{ name: string; value: number }>>([]);
@@ -38,9 +43,12 @@ export default function CategoryPieChart() {
       }
 
       const map = new Map<string, number>();
-      rows.forEach((row) => {
-        const name = row.category?.name || "未分类";
-        const amount = Number(row.amount_base || 0);
+      (rows as ExpenseCategoryRow[]).forEach((row) => {
+        const categoryName = Array.isArray(row.category)
+          ? row.category[0]?.name
+          : row.category?.name;
+        const name = categoryName || "未分类";
+        const amount = Number(row.amount_base ?? 0);
         map.set(name, (map.get(name) || 0) + amount);
       });
 
@@ -84,7 +92,7 @@ export default function CategoryPieChart() {
                 ))}
               </Pie>
               <Tooltip />
-              <Legend />
+              <Legend align="center" verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
             </PieChart>
           </ResponsiveContainer>
         </div>

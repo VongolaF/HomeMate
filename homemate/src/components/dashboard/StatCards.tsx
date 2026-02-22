@@ -58,31 +58,25 @@ export default function StatCards() {
   const balance = useMemo(() => income - expense, [income, expense]);
 
   return (
-    <Card title="本月概览" loading={loading}>
+    <Card title="本月概览" loading={loading} style={{ height: "100%" }}>
       {error ? (
         <Typography.Text type="danger">加载没成功</Typography.Text>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-            gap: 12,
-          }}
-        >
+        <div style={{ display: "grid", gap: 12 }}>
           <div>
-            <Typography.Text type="secondary">本月花了</Typography.Text>
+            <Typography.Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 15 }}>本月花了</Typography.Text>
             <Typography.Title level={4} style={{ margin: "4px 0 0" }}>
               ¥{expense.toFixed(2)}
             </Typography.Title>
           </div>
           <div>
-            <Typography.Text type="secondary">本月进账</Typography.Text>
+            <Typography.Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 15 }}>本月进账</Typography.Text>
             <Typography.Title level={4} style={{ margin: "4px 0 0" }}>
               ¥{income.toFixed(2)}
             </Typography.Title>
           </div>
           <div>
-            <Typography.Text type="secondary">结余</Typography.Text>
+            <Typography.Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 15 }}>结余</Typography.Text>
             <Typography.Title level={4} style={{ margin: "4px 0 0" }}>
               ¥{balance.toFixed(2)}
             </Typography.Title>

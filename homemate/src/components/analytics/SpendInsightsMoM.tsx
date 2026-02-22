@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Card, DatePicker, Empty, List, Skeleton, Typography } from "antd";
+import { Alert, Card, DatePicker, Divider, Empty, Skeleton, Space, Typography } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
@@ -105,7 +105,7 @@ export default function SpendInsightsMoM({
 
   return (
     <Card
-      title="支出优化建议（环比）"
+      title="支出优化建议 (环比)"
       extra={
         <DatePicker
           picker="month"
@@ -122,21 +122,22 @@ export default function SpendInsightsMoM({
       ) : !hasData ? (
         <Empty description="还没有足够数据生成建议" />
       ) : (
-        <List
-          dataSource={insights}
-          renderItem={(item) => (
-            <List.Item>
-              <List.Item.Meta
-                title={
-                  <Typography.Text strong>
-                    {item.name} 增加 ¥{item.delta.toFixed(2)}
-                  </Typography.Text>
-                }
-                description={`上月 ¥${item.previous.toFixed(2)} → 本月 ¥${item.current.toFixed(2)}`}
-              />
-            </List.Item>
-          )}
-        />
+        <Space
+          orientation="vertical"
+          style={{ width: "100%" }}
+          separator={<Divider style={{ margin: "8px 0" }} />}
+        >
+          {insights.map((item) => (
+            <div key={item.name} style={{ display: "grid", gap: 2 }}>
+              <Typography.Text strong>
+                {item.name} 增加 ¥{item.delta.toFixed(2)}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                上月 ¥{item.previous.toFixed(2)} → 本月 ¥{item.current.toFixed(2)}
+              </Typography.Text>
+            </div>
+          ))}
+        </Space>
       )}
     </Card>
   );

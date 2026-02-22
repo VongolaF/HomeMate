@@ -269,7 +269,7 @@ export default function SavingsPage() {
 
       {loading && <Card loading />}
 
-      <Space orientation="vertical" style={{ width: "100%" }} size={16}>
+      <div style={{ display: "grid", gap: 16 }}>
         <GoalsSection
           title="短期目标"
           goals={groupedGoals.shortTerm}
@@ -297,7 +297,7 @@ export default function SavingsPage() {
           actionLoading={saving}
           emptyText="还没有无截止日期目标"
         />
-      </Space>
+      </div>
 
       <Modal
         title={editingGoal ? "修改目标" : "添加目标"}
@@ -317,10 +317,10 @@ export default function SavingsPage() {
           >
             <InputNumber style={{ width: "100%" }} min={0} precision={2} />
           </Form.Item>
-          <Form.Item name="deadline" label="截止日期（可选）">
+          <Form.Item name="deadline" label="截止日期 (可选 )">
             <DatePicker style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="rule_amount" label="每月自动存入（可选）">
+          <Form.Item name="rule_amount" label="每月自动存入 (可选 )">
             <InputNumber style={{ width: "100%" }} min={0} precision={2} />
           </Form.Item>
         </Form>

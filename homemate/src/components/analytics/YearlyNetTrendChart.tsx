@@ -4,6 +4,7 @@ import { Alert, Card, Empty, Skeleton } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -84,12 +85,31 @@ export default function YearlyNetTrendChart({
       ) : !hasData ? (
         <Empty description="还没有数据" />
       ) : (
-        <div style={{ width: "100%", height: 320 }}>
+        <div style={{ width: "100%", height: 350 }}>
           <ResponsiveContainer>
-            <LineChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
-              <XAxis dataKey="month" tickMargin={8} />
-              <YAxis tickMargin={8} />
+            <LineChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 12 }}>
+              <XAxis
+                dataKey="month"
+                tickMargin={8}
+                label={{
+                  value: "月 份",
+                  position: "end",
+                  dy: 20,
+                  style: { fontSize: 14, fontWeight: "bold", fill: "#000" },
+                }}
+              />
+              <YAxis
+                tickMargin={8}
+                label={{
+                  value: "结 余",
+                  angle: 0,
+                  position: "insideTop",
+                  dy: -32,
+                  style: { fontSize: 14, fontWeight: "bold", fill: "#000" },
+                }}
+              />
               <Tooltip />
+              <Legend align="center" verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
               <Line type="monotone" dataKey="net" name="结余" stroke="#8cd4ff" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>

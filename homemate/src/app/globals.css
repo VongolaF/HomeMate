@@ -12,3 +12,23 @@ body {
   font-weight: 700;
   color: #1f1f1f;
 }
+
+/* Profile avatar overlay */
+.profile-avatar-overlay {
+  pointer-events: none;
+}
+
+.profile-avatar:hover > .profile-avatar-overlay,
+.profile-avatar:focus-within > .profile-avatar-overlay {
+  opacity: 1 !important;
+  pointer-events: auto;
+}
+
+.headerbar-username {
+  color: #6b1b3b;
+}
+
+.headerbar-username:hover {
+  color: #e64576;
+  text-decoration: underline;
+}

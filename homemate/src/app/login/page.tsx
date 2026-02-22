@@ -177,7 +177,7 @@ export default function LoginPage() {
                     <Input placeholder="用户名" autoComplete="username" />
                   </Form.Item>
                   <Form.Item label="昵称" name="display_name">
-                    <Input placeholder="昵称（可选）" autoComplete="name" />
+                    <Input placeholder="昵称 (可选 )" autoComplete="name" />
                   </Form.Item>
                   <Form.Item
                     label="密码"

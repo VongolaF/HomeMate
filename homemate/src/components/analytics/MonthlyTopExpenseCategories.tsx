@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,6 +16,36 @@ import { supabase } from "@/lib/supabase/client";
 
 type TransactionRow = { amount_base: number | null; category_id: string | null };
 type CategoryRow = { id: string; name: string };
+
+function renderCategoryYAxisLabel(props: unknown) {
+  const viewBox = (props as { viewBox?: { x?: number; y?: number; height?: number } })?.viewBox;
+  if (!viewBox) return "";
+  const x = Number(viewBox.x ?? 0);
+  const y = Number(viewBox.y ?? 0);
+  const height = Number(viewBox.height ?? 0);
+
+  const cx = x + 10;
+  const cy = y + height / 2;
+
+  return (
+    <text
+      x={cx}
+      y={cy}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fill="#000"
+      fontSize={14}
+      fontWeight={700}
+    >
+      <tspan x={cx} dy={-8}>
+        分
+      </tspan>
+      <tspan x={cx} dy={16}>
+        类
+      </tspan>
+    </text>
+  );
+}
 
 export default function MonthlyTopExpenseCategories() {
   const [selectedMonth, setSelectedMonth] = useState<Dayjs>(dayjs());
@@ -105,9 +136,23 @@ export default function MonthlyTopExpenseCategories() {
         <div style={{ width: "100%", height: 320 }}>
           <ResponsiveContainer>
             <BarChart data={data} layout="vertical" margin={{ top: 16, right: 16, left: 32, bottom: 8 }}>
-              <XAxis type="number" />
-              <YAxis type="category" dataKey="name" width={90} />
+              <XAxis
+                type="number"
+                label={{
+                  value: "金 额",
+                  position: "end",
+                  dy: 15,
+                  style: { fontSize: 14, fontWeight: "bold", fill: "#000" },
+                }}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={90}
+                label={{ position: "insideLeft", content: renderCategoryYAxisLabel }}
+              />
               <Tooltip />
+              <Legend align="center" verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
               <Bar dataKey="value" name="支出" fill="#ff6fae" radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
