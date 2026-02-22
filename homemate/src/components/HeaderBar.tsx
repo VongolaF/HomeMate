@@ -5,7 +5,7 @@ import { Avatar, Dropdown, Layout, Space, Typography, message } from "antd";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
-import { REMEMBER_ME_KEY } from "@/lib/auth/constants";
+import { REMEMBER_ME_KEY, SESSION_STARTED_AT_KEY } from "@/lib/auth/constants";
 
 type ProfileRow = {
   username: string | null;
@@ -59,6 +59,7 @@ export default function HeaderBar() {
     await supabase.auth.signOut();
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(REMEMBER_ME_KEY);
+      window.localStorage.removeItem(SESSION_STARTED_AT_KEY);
     }
     message.success("已退出登录");
   };

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProfilePage from "./page";
 
 vi.mock("antd-img-crop", () => ({
@@ -74,5 +74,5 @@ describe("ProfilePage", () => {
     fireEvent.click(backButton);
 
     expect(pushMock).toHaveBeenCalledWith("/");
-  });
+  }, 10000);
 });

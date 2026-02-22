@@ -25,7 +25,7 @@ import { useRouter } from "next/navigation";
 import dayjs, { type Dayjs } from "dayjs";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
-import { REMEMBER_ME_KEY } from "@/lib/auth/constants";
+import { REMEMBER_ME_KEY, SESSION_STARTED_AT_KEY } from "@/lib/auth/constants";
 
 type ProfileRow = {
   id: string;
@@ -213,6 +213,7 @@ export default function ProfilePage() {
     await supabase.auth.signOut();
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(REMEMBER_ME_KEY);
+      window.localStorage.removeItem(SESSION_STARTED_AT_KEY);
     }
     message.success("已退出登录");
   };

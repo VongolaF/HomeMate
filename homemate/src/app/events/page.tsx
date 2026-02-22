@@ -366,9 +366,9 @@ export default function EventsPage() {
       >
         {selectedEvents.length ? (
           <Space
-            direction="vertical"
+            orientation="vertical"
             style={{ width: "100%" }}
-            split={<Divider style={{ margin: "12px 0" }} />}
+            separator={<Divider style={{ margin: "12px 0" }} />}
           >
             {selectedEvents.map((item) => {
               const priority = item.priority ?? "medium";

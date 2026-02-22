@@ -44,7 +44,7 @@ test("groups transactions by date and shows subtotal", () => {
   render(<TransactionsList transactions={transactions} categories={categories} />);
 
   expect(screen.getByText("2026-02-14")).toBeInTheDocument();
-  expect(screen.getByText("合计 ¥50.00")).toBeInTheDocument();
+  expect(screen.getByText("合计 -¥50.00")).toBeInTheDocument();
   expect(screen.getByText("餐饮")).toBeInTheDocument();
   expect(screen.getByText("未分类")).toBeInTheDocument();
 });

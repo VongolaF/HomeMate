@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Table, Typography } from "antd";
+import { Button, Card, Space, Typography } from "antd";
 
 export type WorkoutSlot = "cardio" | "strength" | "notes" | "duration";
 
@@ -15,60 +15,112 @@ export type WorkoutDayPlan = {
 
 type WorkoutWeekTableProps = {
   data: WorkoutDayPlan[];
-  onSelect: (selection: { date: string; slotType: WorkoutSlot }) => void;
+  onSelect: (selection: { date: string; selectionType: "day" | "slot"; slotType?: WorkoutSlot }) => void;
+  selected?: { date: string; selectionType: "day" | "slot"; slotType?: WorkoutSlot } | null;
 };
 
-const renderCell = (
+const workoutSlots: Array<{ key: WorkoutSlot; label: string }> = [
+  { key: "cardio", label: "有氧" },
+  { key: "strength", label: "无氧" },
+  { key: "duration", label: "时长" },
+  { key: "notes", label: "备注" },
+];
+
+const renderValueButton = (
   value: string | number | null | undefined,
   date: string,
   slotType: WorkoutSlot,
-  onSelect: WorkoutWeekTableProps["onSelect"]
-) => (
-  <Button type="link" size="small" onClick={() => onSelect({ date, slotType })}>
-    {value ?? "-"}
-  </Button>
-);
+  onSelect: WorkoutWeekTableProps["onSelect"],
+  selected?: WorkoutWeekTableProps["selected"]
+) => {
+  const isSelected =
+    selected?.date === date && selected?.selectionType === "slot" && selected?.slotType === slotType;
+  const display = value === null || value === undefined || value === "" ? "-" : String(value);
 
-export default function WorkoutWeekTable({ data, onSelect }: WorkoutWeekTableProps) {
   return (
-    <Table
+    <Button
+      type="link"
       size="small"
-      pagination={false}
-      dataSource={data.map((item) => ({ ...item, key: item.date }))}
-      columns={[
-        {
-          title: "日期",
-          dataIndex: "weekdayLabel",
-          key: "weekdayLabel",
-          render: (_, record) => (
-            <Typography.Text>{`${record.weekdayLabel} ${record.date}`}</Typography.Text>
-          ),
-        },
-        {
-          title: "有氧",
-          dataIndex: "cardio",
-          key: "cardio",
-          render: (value, record) => renderCell(value, record.date, "cardio", onSelect),
-        },
-        {
-          title: "无氧",
-          dataIndex: "strength",
-          key: "strength",
-          render: (value, record) => renderCell(value, record.date, "strength", onSelect),
-        },
-        {
-          title: "时长(min)",
-          dataIndex: "duration_min",
-          key: "duration_min",
-          render: (value, record) => renderCell(value, record.date, "duration", onSelect),
-        },
-        {
-          title: "备注",
-          dataIndex: "notes",
-          key: "notes",
-          render: (value, record) => renderCell(value, record.date, "notes", onSelect),
-        },
-      ]}
-    />
+      onClick={() => onSelect({ date, selectionType: "slot", slotType })}
+      style={{ padding: 0, height: "auto", fontWeight: isSelected ? 600 : 400 }}
+      aria-current={isSelected ? "true" : undefined}
+    >
+      {slotType === "duration" && display !== "-" ? `${display} min` : display}
+    </Button>
+  );
+};
+
+export default function WorkoutWeekTable({ data, onSelect, selected = null }: WorkoutWeekTableProps) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: 12,
+      }}
+    >
+      {data.map((day) => (
+        <Card
+          key={day.date}
+          size="small"
+          title={
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelect({ date: day.date, selectionType: "day" })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect({ date: day.date, selectionType: "day" });
+                }
+              }}
+              style={{ cursor: "pointer" }}
+            >
+              <Space orientation="vertical" size={0}>
+                <Typography.Text strong>
+                  {day.weekdayLabel}
+                  {selected?.date === day.date && selected?.selectionType === "day" ? "（已选）" : ""}
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {day.date}
+                </Typography.Text>
+              </Space>
+            </div>
+          }
+          style={{ width: "100%" }}
+        >
+          <Space orientation="vertical" size={10} style={{ width: "100%" }}>
+            {workoutSlots.map((slot) => {
+              const rawValue: string | number | null | undefined =
+                slot.key === "duration"
+                  ? day.duration_min
+                  : slot.key === "cardio"
+                    ? day.cardio
+                    : slot.key === "strength"
+                      ? day.strength
+                      : day.notes;
+              return (
+                <div
+                  key={slot.key}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "52px 1fr",
+                    gap: 8,
+                    alignItems: "start",
+                  }}
+                >
+                  <Typography.Text type="secondary" style={{ fontSize: 12, lineHeight: "20px" }}>
+                    {slot.label}
+                  </Typography.Text>
+                  <div style={{ lineHeight: "20px" }}>
+                    {renderValueButton(rawValue, day.date, slot.key, onSelect, selected)}
+                  </div>
+                </div>
+              );
+            })}
+          </Space>
+        </Card>
+      ))}
+    </div>
   );
 }

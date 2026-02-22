@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { ChatOpenAI } from "@langchain/openai";
-import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
-import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
+import { createAgent } from "langchain";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildHealthAgentTools } from "@/lib/health/agentTools";
+import { createHealthChatModel } from "@/lib/health/llm";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -45,6 +44,26 @@ type HealthChatBody = {
   weekStart?: string;
   timezone?: string;
   context?: HealthChatContext;
+};
+
+const normalizeContent = (content: unknown) => {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const combined = content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && "text" in part) {
+          return String((part as { text?: unknown }).text ?? "");
+        }
+        return "";
+      })
+      .join("");
+    return combined || null;
+  }
+  if (content && typeof content === "object" && "text" in content) {
+    return String((content as { text?: unknown }).text ?? "");
+  }
+  return null;
 };
 
 export async function POST(request: Request) {
@@ -91,15 +110,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const llmApiKey = process.env.HEALTH_LLM_API_KEY;
-  const llmModel = process.env.HEALTH_LLM_MODEL;
-  const llmApiBase = process.env.HEALTH_LLM_API_BASE;
-
-  if (!llmApiKey || !llmModel || !llmApiBase) {
-    return NextResponse.json(
-      { error: "Missing LLM configuration" },
-      { status: 500 }
-    );
+  const llm = createHealthChatModel({ temperature: 0.3 });
+  if (!llm) {
+    return NextResponse.json({ error: "Missing LLM configuration" }, { status: 500 });
   }
 
   const tools = buildHealthAgentTools({
@@ -109,54 +122,48 @@ export async function POST(request: Request) {
     timezone,
   });
 
-  const systemPrompt = `You are a health assistant. Use tools to update plans when needed.
-Context includes weekStart, timezone, and optional selection fields. Use raw slotType text as provided.
-When updating plans, call tools with JSON input strings. Keep replies concise and helpful.`;
+  const systemPrompt = `You are a health assistant.
 
-  const prompt = ChatPromptTemplate.fromMessages([
-    ["system", systemPrompt],
-    [
-      "human",
-      "User message: {input}\nContext: {context}\nReturn plain text for the reply.",
-    ],
-    new MessagesPlaceholder("agent_scratchpad"),
-  ]);
+Your job: answer the user's questions about their weekly meal/workout plan shown in the calendar table.
 
-  const llm = new ChatOpenAI({
-    apiKey: llmApiKey,
-    model: llmModel,
-    temperature: 0.3,
-    configuration: {
-      baseURL: llmApiBase,
-    },
-  });
+Plan awareness:
+- Before answering, ALWAYS call the appropriate tool to fetch the latest plan for this weekStart:
+  - If view is meals: call get_meal_week_plan
+  - If view is workouts: call get_workout_week_plan
+- Use the selected date/slotType (if provided) to focus your answer.
 
-  const agent = await createOpenAIToolsAgent({
-    llm,
+Edits:
+- Only call update_* tools if the user explicitly asks to change the plan.
+
+Output:
+- Reply in concise plain text. No markdown.`;
+
+  const agent = createAgent({
+    model: llm,
     tools,
-    prompt,
+    systemPrompt,
   });
 
-  const executor = new AgentExecutor({
-    agent,
-    tools,
-  });
-
-  let result: { output?: string } | null = null;
+  let result: { messages?: Array<{ content?: unknown }> } | null = null;
   try {
-    result = (await executor.invoke({
-      input: message,
-      context: JSON.stringify({
-        weekStart,
-        timezone,
-        selected: body.context ?? null,
-      }),
-    })) as { output?: string };
+    result = (await agent.invoke({
+      messages: [
+        {
+          role: "user",
+          content: `User message: ${message}\nContext: ${JSON.stringify({
+            weekStart,
+            timezone,
+            selected: body.context ?? null,
+          })}\nReturn plain text for the reply.`,
+        },
+      ],
+    })) as { messages?: Array<{ content?: unknown }> };
   } catch (error) {
     return NextResponse.json({ error: "Agent execution failed" }, { status: 502 });
   }
 
-  const reply = result?.output?.trim();
+  const lastMessage = result?.messages?.[result.messages.length - 1];
+  const reply = normalizeContent(lastMessage?.content)?.trim();
   if (!reply) {
     return NextResponse.json({ error: "Empty agent response" }, { status: 502 });
   }

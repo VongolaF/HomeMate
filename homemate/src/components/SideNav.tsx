@@ -8,7 +8,7 @@ import {
   ProfileOutlined,
   WalletOutlined,
   DashboardOutlined,
-  UserOutlined,
+  HeartOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from "@ant-design/icons";
@@ -20,8 +20,8 @@ const items = [
   { key: "transactions", icon: <WalletOutlined />, label: "记账", href: "/transactions" },
   { key: "analytics", icon: <PieChartOutlined />, label: "统计报表", href: "/analytics" },
   { key: "events", icon: <CalendarOutlined />, label: "日历提醒", href: "/events" },
+  { key: "health", icon: <HeartOutlined />, label: "健康管理", href: "/health" },
   { key: "savings", icon: <ProfileOutlined />, label: "存钱目标", href: "/savings" },
-  { key: "profile", icon: <UserOutlined />, label: "个人中心", href: "/profile" },
 ];
 
 const pathToKey = (pathname: string) => {
@@ -29,8 +29,8 @@ const pathToKey = (pathname: string) => {
   if (pathname.startsWith("/transactions")) return "transactions";
   if (pathname.startsWith("/analytics")) return "analytics";
   if (pathname.startsWith("/events")) return "events";
+  if (pathname.startsWith("/health")) return "health";
   if (pathname.startsWith("/savings")) return "savings";
-  if (pathname.startsWith("/profile")) return "profile";
   return "home";
 };
 
@@ -63,10 +63,10 @@ export default function SideNav() {
           type="text"
           onClick={() => setCollapsed((value) => !value)}
           icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-          aria-label={collapsed ? "展开导航" : "收起导航"}
+          aria-label={collapsed ? "展开侧边" : "收起侧边"}
           style={{ width: "100%", display: "flex", alignItems: "center", gap: 8 }}
         >
-          {collapsed ? null : "收起导航栏"}
+          {collapsed ? null : "收起侧边栏"}
         </Button>
       </div>
       <Menu

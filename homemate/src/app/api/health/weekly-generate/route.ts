@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { createClient } from "@supabase/supabase-js";
+
+import { createHealthChatModel } from "@/lib/health/llm";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -187,7 +188,7 @@ const hasPlanContent = (plans: { meals: MealPlan[]; workouts: WorkoutPlan[] }) =
 };
 
 const deleteWeekPlan = async (
-  supabase: ReturnType<typeof createClient>,
+  supabase: { from: (table: string) => any },
   table: "meal_week_plans" | "workout_week_plans",
   id: string,
   userId: string
@@ -239,15 +240,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const apiKey = process.env.HEALTH_LLM_API_KEY;
-  const model = process.env.HEALTH_LLM_MODEL;
-  const apiBase = process.env.HEALTH_LLM_API_BASE;
-
-  if (!apiKey || !model || !apiBase) {
-    return NextResponse.json(
-      { error: "Missing LLM configuration" },
-      { status: 500 }
-    );
+  const llm = createHealthChatModel({ temperature: 0 });
+  if (!llm) {
+    return NextResponse.json({ error: "Missing LLM configuration" }, { status: 500 });
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -271,15 +266,6 @@ export async function POST(request: Request) {
 
   const weekStartDate = parseIsoDate(weekStart)!;
   const days = buildWeekDays(weekStartDate);
-
-  const llm = new ChatOpenAI({
-    apiKey,
-    model,
-    temperature: 0,
-    configuration: {
-      baseURL: apiBase,
-    },
-  });
 
   let generatedCount = 0;
 

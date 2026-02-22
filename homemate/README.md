@@ -4,9 +4,33 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Setup
 
-1. Copy `.env.example` to `.env.local`
-2. Fill Supabase URL and anon key
+### Environments
+
+This repo supports three app environments:
+
+- **dev**: local development
+- **int**: integration (typically Vercel Preview)
+- **prod**: production (typically Vercel Production)
+
+The active environment is exposed to the client as `NEXT_PUBLIC_APP_ENV`.
+
+### Local dev
+
+1. Copy `.env.example` to `.env.dev` (or `.env.dev.local`)
+2. Fill Supabase URL and anon key (and any server-only secrets as needed)
 3. Run `npm install` and `npm run dev`
+
+### Local int
+
+1. Copy `.env.example` to `.env.int` (or `.env.int.local`)
+2. Fill values
+3. Run `npm run int`
+
+### Local prod (simulation)
+
+1. Copy `.env.example` to `.env.prod` (or `.env.prod.local`)
+2. Fill values
+3. Run `npm run prod`
 
 First, run the development server:
 

@@ -8,6 +8,7 @@ export type GoalCardData = {
   title: string;
   target_amount: number;
   deadline: string | null;
+  rule_amount: number | null;
   current_amount: number | null;
 };
 

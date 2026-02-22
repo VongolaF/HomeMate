@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Checkbox, Form, Input, Modal, Tabs, Typography, message } from "antd";
 import { supabase } from "@/lib/supabase/client";
-import { REMEMBER_ME_KEY } from "@/lib/auth/constants";
+import { REMEMBER_ME_KEY, SESSION_STARTED_AT_KEY } from "@/lib/auth/constants";
 
 const normalizeText = (value: string) => value.trim();
 
@@ -40,6 +40,10 @@ export default function LoginPage() {
         message.error("邮箱或密码不正确");
         return;
       }
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SESSION_STARTED_AT_KEY, String(Date.now()));
+    }
+
     message.success("登录成功");
     router.push("/");
   };

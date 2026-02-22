@@ -35,12 +35,20 @@ export default function TransactionsList({
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           {dates.map((date) => {
             const items = grouped[date];
-            const subtotal = items.reduce((sum, item) => sum + Number(item.amount_base || 0), 0);
+            let income = 0;
+            let expense = 0;
+            items.forEach((item) => {
+              const amount = Number(item.amount_base ?? item.amount ?? 0);
+              if (item.type === "income") income += amount;
+              else expense += amount;
+            });
+            const subtotal = income - expense;
+            const subtotalText = `${subtotal < 0 ? "-" : ""}¥${Math.abs(subtotal).toFixed(2)}`;
             return (
               <div key={date} style={{ borderBottom: "1px solid #f0f0f0", paddingBottom: 16 }}>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
                   <Typography.Text strong>{dayjs(date).format("YYYY-MM-DD")}</Typography.Text>
-                  <Typography.Text type="secondary">合计 ¥{subtotal.toFixed(2)}</Typography.Text>
+                  <Typography.Text type="secondary">合计 {subtotalText}</Typography.Text>
                 </Space>
                 <Space orientation="vertical" size={12} style={{ width: "100%", marginTop: 12 }}>
                   {items.map((item) => {

@@ -1,7 +1,31 @@
 import "server-only";
 
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+
+export function createServerSupabaseClient(request: Request) {
+	const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+	const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+	if (!supabaseUrl || !supabaseAnonKey) {
+		throw new Error("Missing Supabase environment configuration");
+	}
+
+	const authHeader = request.headers.get("authorization");
+	const headers = authHeader ? { Authorization: authHeader } : undefined;
+
+	return createClient(supabaseUrl, supabaseAnonKey, {
+		global: {
+			headers,
+		},
+		auth: {
+			persistSession: false,
+			autoRefreshToken: false,
+			detectSessionInUrl: false,
+		},
+	});
+}
 
 export async function createSupabaseServerClient() {
 	const cookieStore = await cookies();
@@ -11,17 +35,17 @@ export async function createSupabaseServerClient() {
 		process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 		{
 			cookies: {
-				get(name) {
+				get(name: string) {
 					return cookieStore.get(name)?.value;
 				},
-				set(name, value, options) {
+				set(name: string, value: string, options: CookieOptions) {
 					try {
 						cookieStore.set({ name, value, ...options });
 					} catch {
 						// Ignore cookie mutation errors outside actions/handlers.
 					}
 				},
-				remove(name, options) {
+				remove(name: string, options: CookieOptions) {
 					try {
 						cookieStore.set({ name, value: "", ...options });
 					} catch {
@@ -41,11 +65,11 @@ export async function createSupabaseServerReadClient() {
 		process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 		{
 			cookies: {
-				get(name) {
+				get(name: string) {
 					return cookieStore.get(name)?.value;
 				},
-				set() {},
-				remove() {},
+				set(_name: string, _value: string, _options: CookieOptions) {},
+				remove(_name: string, _options: CookieOptions) {},
 			},
 		}
 	);

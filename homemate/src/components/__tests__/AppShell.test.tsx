@@ -25,5 +25,5 @@ test("renders app shell", () => {
 test("does not render side nav on profile", () => {
   render(<AppShell><div>content</div></AppShell>);
   expect(screen.getByText("HomeMate")).toBeInTheDocument();
-  expect(screen.queryByText("收起导航栏")).toBeNull();
+  expect(screen.queryByText("收起侧边栏")).toBeNull();
 });

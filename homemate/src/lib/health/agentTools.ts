@@ -37,6 +37,10 @@ type WorkoutDayUpdateInput = {
   notes?: unknown;
 };
 
+type WeekPlanReadInput = {
+  weekStart?: unknown;
+};
+
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const MEAL_FIELDS = ["breakfast", "lunch", "dinner", "snacks", "notes"] as const;
 const WORKOUT_FIELDS = [
@@ -101,6 +105,12 @@ const parseJsonInput = (input: string) => {
   } catch (error) {
     return null;
   }
+};
+
+const parseWeekReadInput = (input: string) => {
+  if (!input || !input.trim()) return {} as WeekPlanReadInput;
+  const parsed = parseJsonInput(input) as WeekPlanReadInput | null;
+  return parsed ?? ({} as WeekPlanReadInput);
 };
 
 const loadWeekPlanId = async (
@@ -273,7 +283,57 @@ const updateWorkoutDay = async (input: string, context: AgentToolContext) => {
   return "Workout day plan updated.";
 };
 
+const readMealWeek = async (input: string, context: AgentToolContext) => {
+  const payload = parseWeekReadInput(input);
+  const weekStart = validateWeekStart(payload.weekStart, context);
+  if (!weekStart) return "Invalid weekStart.";
+
+  const weekPlanId = await loadWeekPlanId(context, "meal_week_plans", weekStart);
+  if (!weekPlanId) return JSON.stringify({ weekStart, dayPlans: [] });
+
+  const { data, error } = await context.supabase
+    .from("meal_day_plans")
+    .select("date, breakfast, lunch, dinner, snacks, notes")
+    .eq("week_plan_id", weekPlanId)
+    .order("date", { ascending: true });
+
+  if (error) return "Failed to load meal plan.";
+
+  return JSON.stringify({ weekStart, dayPlans: data ?? [] });
+};
+
+const readWorkoutWeek = async (input: string, context: AgentToolContext) => {
+  const payload = parseWeekReadInput(input);
+  const weekStart = validateWeekStart(payload.weekStart, context);
+  if (!weekStart) return "Invalid weekStart.";
+
+  const weekPlanId = await loadWeekPlanId(context, "workout_week_plans", weekStart);
+  if (!weekPlanId) return JSON.stringify({ weekStart, dayPlans: [] });
+
+  const { data, error } = await context.supabase
+    .from("workout_day_plans")
+    .select("date, cardio, strength, duration_min, intensity, notes")
+    .eq("week_plan_id", weekPlanId)
+    .order("date", { ascending: true });
+
+  if (error) return "Failed to load workout plan.";
+
+  return JSON.stringify({ weekStart, dayPlans: data ?? [] });
+};
+
 export const buildHealthAgentTools = (context: AgentToolContext) => [
+  new DynamicTool({
+    name: "get_meal_week_plan",
+    description:
+      "Read the current user's meal week plan for this weekStart. Input JSON optional: { weekStart }. Returns JSON string.",
+    func: (input) => readMealWeek(input, context),
+  }),
+  new DynamicTool({
+    name: "get_workout_week_plan",
+    description:
+      "Read the current user's workout week plan for this weekStart. Input JSON optional: { weekStart }. Returns JSON string.",
+    func: (input) => readWorkoutWeek(input, context),
+  }),
   new DynamicTool({
     name: "update_meal_item",
     description:

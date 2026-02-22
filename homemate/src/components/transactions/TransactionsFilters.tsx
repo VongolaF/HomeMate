@@ -31,6 +31,17 @@ interface FiltersFormValues {
 export default function TransactionsFilters({ categories, onApply }: TransactionsFiltersProps) {
   const [form] = Form.useForm<FiltersFormValues>();
 
+  const renderCategoryLabel = (category: UserCategory) => {
+    const icon = (category.icon ?? "").trim();
+    if (!icon) return category.name;
+    return (
+      <Space size={8}>
+        <span aria-hidden>{icon}</span>
+        <span>{category.name}</span>
+      </Space>
+    );
+  };
+
   const handleFinish = (values: FiltersFormValues) => {
     const [start, end] = values.dateRange ?? [];
     onApply({
@@ -79,7 +90,7 @@ export default function TransactionsFilters({ categories, onApply }: Transaction
               placeholder="选择分类"
               options={categories.map((category) => ({
                 value: category.id,
-                label: category.name,
+                label: renderCategoryLabel(category),
               }))}
             />
           </Form.Item>
