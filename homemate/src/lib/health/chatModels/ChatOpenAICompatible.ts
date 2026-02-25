@@ -130,6 +130,24 @@ export class ChatOpenAICompatible extends BaseChatModel<ChatOpenAICompatibleCall
   ) {
     const url = `${this.baseURL}/chat/completions`;
 
+    const timeoutMsRaw = process.env.HEALTH_LLM_TIMEOUT_MS;
+    const timeoutMs = Math.max(1_000, Number(timeoutMsRaw ?? 20_000));
+    const retriesRaw = process.env.HEALTH_LLM_RETRIES;
+    const retries = Math.max(0, Math.min(3, Number(retriesRaw ?? 1)));
+
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const buildSignal = () => {
+      const baseSignal = (options as any)?.signal as AbortSignal | undefined;
+      const timeoutSignal = AbortSignal.timeout(timeoutMs);
+
+      if (!baseSignal) return timeoutSignal;
+      // Abort on either the caller signal or our timeout.
+      const anySignal = (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal })
+        .any;
+      return anySignal ? anySignal([baseSignal, timeoutSignal]) : baseSignal;
+    };
+
     const openAiMessages = messages.map(messageToOpenAI);
     const boundTools: ToolDefinition[] = (options as any)?.tools ?? this.defaultTools;
 
@@ -145,18 +163,63 @@ export class ChatOpenAICompatible extends BaseChatModel<ChatOpenAICompatibleCall
     if ((options as any)?.tool_choice !== undefined) payload.tool_choice = (options as any).tool_choice;
     if (boundTools.length) payload.tools = boundTools;
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(payload),
-      signal: (options as any)?.signal,
-    });
+    let res: Response;
+    let rawText: string;
 
-    const rawText = await res.text();
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify(payload),
+          signal: buildSignal(),
+        });
+        rawText = await res.text();
+        break;
+      } catch (error) {
+        const err = error as { name?: string; code?: string; message?: string };
+        const isLast = attempt >= retries;
+
+        const isAbort = err?.name === "AbortError";
+        const isTimeout = err?.code === "UND_ERR_CONNECT_TIMEOUT" || /timeout/i.test(err?.message ?? "");
+        const isNetwork = isAbort || isTimeout || err?.name === "TypeError";
+
+        if (!isNetwork || isLast) {
+          const safeUrl = (() => {
+            try {
+              const parsed = new URL(url);
+              return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+            } catch {
+              return url;
+            }
+          })();
+
+          throw new Error(
+            `LLM network error: provider=${this._llmType()} model=${this.model} url=${safeUrl} message=${err?.message ?? "fetch failed"}`
+          );
+        }
+
+        await sleep(300 * Math.pow(2, attempt));
+        continue;
+      }
+    }
+
+    // @ts-expect-error - res/rawText are set by the loop or we threw above.
+    if (!res) {
+      throw new Error("LLM request failed: no response");
+    }
+
+    // @ts-expect-error - rawText is set by the loop or we threw above.
+    if (rawText === undefined) {
+      throw new Error("LLM request failed: empty response");
+    }
+
+    // @ts-expect-error - res/rawText are set by the loop.
     if (!res.ok) {
+      // @ts-expect-error - rawText is set by the loop.
       throw new Error(`LLM request failed (${res.status}): ${rawText}`);
     }
 

@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { createClient } from "@supabase/supabase-js";
 
-import { createHealthChatModel } from "@/lib/health/llm";
+import { createHealthChatModels } from "@/lib/health/llm";
+import {
+  DEFAULT_HEALTH_GOAL,
+  healthGoalToPrompt,
+  normalizeHealthGoal,
+} from "@/lib/health/goals";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -240,8 +245,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const llm = createHealthChatModel({ temperature: 0 });
-  if (!llm) {
+  const models = createHealthChatModels({ temperature: 0 });
+  if (!models) {
     return NextResponse.json({ error: "Missing LLM configuration" }, { status: 500 });
   }
 
@@ -264,6 +269,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, generatedCount: 0 });
   }
 
+  const userIds = users
+    .map((row) => (row as { user_id?: unknown }).user_id)
+    .filter((id): id is string => typeof id === "string" && !!id);
+
+  const goalByUserId = new Map<string, string>();
+  if (userIds.length) {
+    const { data: profileRows } = await supabase
+      .from("profiles")
+      .select("id,health_goal")
+      .in("id", userIds);
+
+    (profileRows ?? []).forEach((row) => {
+      const record = row as { id?: unknown; health_goal?: unknown };
+      if (typeof record.id !== "string") return;
+      const normalized = normalizeHealthGoal(record.health_goal);
+      goalByUserId.set(record.id, normalized ?? DEFAULT_HEALTH_GOAL);
+    });
+  }
+
   const weekStartDate = parseIsoDate(weekStart)!;
   const days = buildWeekDays(weekStartDate);
 
@@ -277,21 +301,43 @@ export async function POST(request: Request) {
       continue;
     }
 
+    const goal = normalizeHealthGoal(goalByUserId.get(userId)) ?? DEFAULT_HEALTH_GOAL;
+
     const systemPrompt =
-      "You are a health planning assistant. Return JSON only, no markdown.";
+      "你是健康计划助手。只返回 JSON，不要 markdown。所有字段值必须使用简体中文（不要英文）。";
     const { user_id: _, ...metricsForPrompt } = userRecord;
-    const userPrompt = `Create a simple 7-day meal and workout plan.\nWeek start: ${weekStart}\nTimezone: ${timezone}\nDates: ${days.join(", ")}\nUser metrics: ${JSON.stringify(metricsForPrompt)}\nReturn JSON with keys meals and workouts.\nMeals: array of 7 items with date, breakfast, lunch, dinner, snacks, notes.\nWorkouts: array of 7 items with date, cardio, strength, duration_min, intensity, notes.\nUse short plain text. Use null for rest day fields. Duration_min should be an integer or null.`;
+    const userPrompt = `请生成一个简单的 7 天游饮食与训练计划。\n${healthGoalToPrompt(goal)}\n周起始日：${weekStart}\n时区：${timezone}\n日期：${days.join(", ")}\n用户指标：${JSON.stringify(metricsForPrompt)}\n\n只返回 JSON，根节点包含 keys：meals 和 workouts。\n- meals：长度为 7 的数组，每项包含 date, breakfast, lunch, dinner, snacks, notes。\n- workouts：长度为 7 的数组，每项包含 date, cardio, strength, duration_min, intensity, notes。\n\n要求：\n- 除 date 外，所有文本必须是简体中文；不要输出英文。\n- 文本尽量短、可执行（像真实菜单/训练安排）。\n- 休息日相关字段用 null。\n- duration_min 必须是整数或 null。`;
 
     let responseContent: unknown;
     try {
-      const response = await llm.invoke([
+      const response = await models.primary.invoke([
         new SystemMessage(systemPrompt),
         new HumanMessage(userPrompt),
       ]);
       responseContent = response.content;
     } catch (error) {
-      console.warn("Skipping user due to LLM failure", { userId });
-      continue;
+      if (models.fallback) {
+        try {
+          const response = await models.fallback.invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ]);
+          responseContent = response.content;
+        } catch (fallbackError) {
+          console.warn("Skipping user due to LLM failure", {
+            userId,
+            primary: error instanceof Error ? error.message : String(error),
+            fallback: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
+          continue;
+        }
+      } else {
+        console.warn("Skipping user due to LLM failure", {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
     }
 
     const content = normalizeContent(responseContent);

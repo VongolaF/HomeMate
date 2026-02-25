@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowLeftOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import {
   Avatar,
@@ -100,8 +100,10 @@ export default function ProfilePage() {
 
   const lightTooltipProps = {
     color: token.colorFillTertiary,
-    overlayInnerStyle: {
-      color: token.colorText,
+    styles: {
+      container: {
+        color: token.colorText,
+      },
     },
   };
 
@@ -218,7 +220,7 @@ export default function ProfilePage() {
     message.success("已退出登录");
   };
 
-  const loadBodyMetrics = async () => {
+  const loadBodyMetrics = useCallback(async () => {
     if (!user) return;
     setBodyLoading(true);
 
@@ -254,7 +256,28 @@ export default function ProfilePage() {
       bmr: row?.bmr ?? undefined,
     });
     setBodyLoading(false);
-  };
+  }, [bodyForm, user]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncFromHash = () => {
+      const nextTab = window.location.hash === "#body" ? "body" : "basic";
+      setActiveTab(nextTab);
+    };
+
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => {
+      window.removeEventListener("hashchange", syncFromHash);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "body" && !bodyMetrics) {
+      void loadBodyMetrics();
+    }
+  }, [activeTab, bodyMetrics, loadBodyMetrics]);
 
   const handleSaveBody = async () => {
     if (!user) return;
@@ -397,7 +420,7 @@ export default function ProfilePage() {
               >
                 <Form.Item
                   label="用户名"
-                  name="display_name"
+                  name="username"
                   rules={[{ required: true, message: "请输入用户名" }]}
                 >
                   <Input placeholder="例如：小明" />

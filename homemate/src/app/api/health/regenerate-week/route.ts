@@ -4,7 +4,12 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { createClient } from "@supabase/supabase-js";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { createHealthChatModel } from "@/lib/health/llm";
+import { createHealthChatModels } from "@/lib/health/llm";
+import {
+  DEFAULT_HEALTH_GOAL,
+  healthGoalToPrompt,
+  normalizeHealthGoal,
+} from "@/lib/health/goals";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -178,7 +183,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { weekStart?: string; timezone?: string };
+  let body: {
+    weekStart?: string;
+    timezone?: string;
+    goal?: unknown;
+    allowMissingBodyMetrics?: unknown;
+  };
 
   try {
     body = await request.json();
@@ -197,6 +207,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing or invalid timezone" }, { status: 400 });
   }
 
+  const requestedGoal = normalizeHealthGoal(body.goal);
+  let savedGoal = DEFAULT_HEALTH_GOAL;
+  if (!requestedGoal) {
+    const { data: profileRow } = await authClient
+      .from("profiles")
+      .select("health_goal")
+      .eq("id", userData.user.id)
+      .maybeSingle();
+    const normalized = normalizeHealthGoal(
+      (profileRow as { health_goal?: unknown } | null)?.health_goal
+    );
+    if (normalized) savedGoal = normalized;
+  }
+  const effectiveGoal = requestedGoal ?? savedGoal;
+
+  const allowMissingBodyMetrics = body.allowMissingBodyMetrics === true;
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -204,8 +231,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing Supabase service role configuration" }, { status: 500 });
   }
 
-  const llm = createHealthChatModel({ temperature: 0 });
-  if (!llm) {
+  const models = createHealthChatModels({ temperature: 0 });
+  if (!models) {
     return NextResponse.json({ error: "Missing LLM configuration" }, { status: 500 });
   }
 
@@ -224,34 +251,89 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to load body metrics" }, { status: 500 });
   }
 
-  if (!metricsRow) {
+  const metricsRecord = (metricsRow ?? null) as Record<string, unknown> | null;
+  const hasBodyMetrics = Boolean(
+    metricsRecord &&
+      (
+        metricsRecord.height_cm ||
+        metricsRecord.weight_kg ||
+        metricsRecord.gender ||
+        metricsRecord.age ||
+        metricsRecord.body_fat_pct ||
+        metricsRecord.muscle_pct ||
+        metricsRecord.subcutaneous_fat ||
+        metricsRecord.visceral_fat ||
+        metricsRecord.bmi ||
+        metricsRecord.water_pct ||
+        metricsRecord.protein_pct ||
+        metricsRecord.bone_mass ||
+        metricsRecord.bmr
+      )
+  );
+
+  if (!hasBodyMetrics && !allowMissingBodyMetrics) {
     return NextResponse.json(
-      { error: "Missing body metrics. Please fill your profile metrics first." },
-      { status: 400 }
+      {
+        error: "BODY_METRICS_CONFIRMATION_REQUIRED",
+        requiresConfirmation: true,
+        confirmationHint:
+          "检测到你还没有填写身体信息（如身高/体重等），计划会更偏通用。你可以先去个人中心填写：/profile#body。\n\n如果你不想填写，也可以继续生成：请在对话中回复“继续”或“跳过”。",
+      },
+      { status: 409 }
     );
   }
 
   const weekStartDate = parseIsoDate(weekStart)!;
   const days = buildWeekDays(weekStartDate);
 
-  const { user_id: userIdForPrompt, ...metricsForPrompt } = metricsRow as Record<
+  const { user_id: userIdForPrompt, ...metricsForPrompt } = (metricsRecord ?? {}) as Record<
     string,
     unknown
   >;
   void userIdForPrompt;
 
-  const systemPrompt = "You are a health planning assistant. Return JSON only, no markdown.";
-  const userPrompt = `Create a simple 7-day meal and workout plan.\nWeek start: ${weekStart}\nTimezone: ${timezone}\nDates: ${days.join(", ")}\nUser metrics: ${JSON.stringify(metricsForPrompt)}\nReturn JSON with keys meals and workouts.\nMeals: array of 7 items with date, breakfast, lunch, dinner, snacks, notes.\nWorkouts: array of 7 items with date, cardio, strength, duration_min, intensity, notes.\nUse short plain text. Use null for rest day fields. Duration_min should be an integer or null.`;
+  const systemPrompt = "你是健康计划助手。只返回 JSON，不要 markdown。所有字段值必须使用简体中文（不要英文）。";
+  const userPrompt = `请生成一个简单的 7 天游饮食与训练计划。\n${healthGoalToPrompt(effectiveGoal)}\n周起始日：${weekStart}\n时区：${timezone}\n日期：${days.join(", ")}\n用户指标：${JSON.stringify(metricsForPrompt)}\n\n只返回 JSON，根节点包含 keys：meals 和 workouts。\n- meals：长度为 7 的数组，每项包含 date, breakfast, lunch, dinner, snacks, notes。\n- workouts：长度为 7 的数组，每项包含 date, cardio, strength, duration_min, intensity, notes。\n\n要求：\n- 除 date 外，所有文本必须是简体中文；不要输出英文。\n- 文本尽量短、可执行（像真实菜单/训练安排）。\n- 休息日相关字段用 null。\n- duration_min 必须是整数或 null。`;
 
   let responseContent: unknown;
   try {
-    const response = await llm.invoke([
+    const response = await models.primary.invoke([
       new SystemMessage(systemPrompt),
       new HumanMessage(userPrompt),
     ]);
     responseContent = response.content;
-  } catch {
-    return NextResponse.json({ error: "LLM request failed" }, { status: 502 });
+  } catch (error) {
+    if (models.fallback) {
+      try {
+        const response = await models.fallback.invoke([
+          new SystemMessage(systemPrompt),
+          new HumanMessage(userPrompt),
+        ]);
+        responseContent = response.content;
+      } catch (fallbackError) {
+        const details =
+          process.env.NODE_ENV !== "production"
+            ? {
+                primary: error instanceof Error ? error.message : String(error),
+                fallback:
+                  fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+              }
+            : undefined;
+        return NextResponse.json(
+          { error: "LLM request failed", ...(details ? { details } : {}) },
+          { status: 502 }
+        );
+      }
+    } else {
+      const details =
+        process.env.NODE_ENV !== "production"
+          ? { message: error instanceof Error ? error.message : String(error) }
+          : undefined;
+      return NextResponse.json(
+        { error: "LLM request failed", ...(details ? { details } : {}) },
+        { status: 502 }
+      );
+    }
   }
 
   const content = normalizeContent(responseContent);

@@ -11,19 +11,29 @@ type HealthLlmConfig = {
 const ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
 const ZHIPU_DEFAULT_MODEL = "glm-4.7";
 
-export const getHealthLlmConfig = (): HealthLlmConfig | null => {
-  const zhipuKey = process.env.ZHIPUAI_API_KEY?.trim();
-  if (zhipuKey) {
-    const baseURL = (process.env.ZHIPUAI_API_BASE?.trim() || ZHIPU_DEFAULT_BASE_URL).replace(/\/+$/, "");
-    const model = process.env.ZHIPUAI_MODEL?.trim() || ZHIPU_DEFAULT_MODEL;
-    return {
-      provider: "zhipu",
-      apiKey: zhipuKey,
-      model,
-      baseURL,
-    };
-  }
+type HealthChatModels = {
+  primary: ChatOpenAICompatible;
+  fallback: ChatOpenAICompatible | null;
+  provider: HealthLlmConfig["provider"];
+};
 
+const getZhipuConfig = (): HealthLlmConfig | null => {
+  const zhipuKey = process.env.ZHIPUAI_API_KEY?.trim();
+  if (!zhipuKey) return null;
+  const baseURL = (process.env.ZHIPUAI_API_BASE?.trim() || ZHIPU_DEFAULT_BASE_URL).replace(
+    /\/+$/,
+    ""
+  );
+  const model = process.env.ZHIPUAI_MODEL?.trim() || ZHIPU_DEFAULT_MODEL;
+  return {
+    provider: "zhipu",
+    apiKey: zhipuKey,
+    model,
+    baseURL,
+  };
+};
+
+const getOpenAICompatibleConfig = (): HealthLlmConfig | null => {
   const apiKey = process.env.HEALTH_LLM_API_KEY?.trim();
   const model = process.env.HEALTH_LLM_MODEL?.trim();
   const baseURL = process.env.HEALTH_LLM_API_BASE?.trim();
@@ -38,23 +48,51 @@ export const getHealthLlmConfig = (): HealthLlmConfig | null => {
   };
 };
 
-export const createHealthChatModel = (options: { temperature: number }) => {
-  const config = getHealthLlmConfig();
-  if (!config) return null;
+export const getHealthLlmConfig = (): HealthLlmConfig | null => {
+  return getZhipuConfig() ?? getOpenAICompatibleConfig();
+};
 
-  if (config.provider === "zhipu") {
-    return new ChatZhipuAI({
-      apiKey: config.apiKey,
-      model: config.model,
-      baseURL: config.baseURL,
-      temperature: options.temperature,
-    });
+export const createHealthChatModels = (options: { temperature: number }): HealthChatModels | null => {
+  const zhipu = getZhipuConfig();
+  const openAiCompat = getOpenAICompatibleConfig();
+
+  if (zhipu) {
+    return {
+      provider: "zhipu",
+      primary: new ChatZhipuAI({
+        apiKey: zhipu.apiKey,
+        model: zhipu.model,
+        baseURL: zhipu.baseURL,
+        temperature: options.temperature,
+      }),
+      fallback: openAiCompat
+        ? new ChatOpenAICompatible({
+            apiKey: openAiCompat.apiKey,
+            model: openAiCompat.model,
+            baseURL: openAiCompat.baseURL,
+            temperature: options.temperature,
+          })
+        : null,
+    };
   }
 
-  return new ChatOpenAICompatible({
-    apiKey: config.apiKey,
-    model: config.model,
-    baseURL: config.baseURL,
-    temperature: options.temperature,
-  });
+  if (openAiCompat) {
+    return {
+      provider: "openai_compatible",
+      primary: new ChatOpenAICompatible({
+        apiKey: openAiCompat.apiKey,
+        model: openAiCompat.model,
+        baseURL: openAiCompat.baseURL,
+        temperature: options.temperature,
+      }),
+      fallback: null,
+    };
+  }
+
+  return null;
+};
+
+export const createHealthChatModel = (options: { temperature: number }) => {
+  const models = createHealthChatModels(options);
+  return models?.primary ?? null;
 };

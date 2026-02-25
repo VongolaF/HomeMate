@@ -1,15 +1,39 @@
 "use client";
 
-import { Button, Card, Col, Input, Row, Space, Typography, message, theme } from "antd";
+import { QuestionCircleOutlined } from "@ant-design/icons";
+import {
+  Button,
+  Card,
+  Col,
+  Input,
+  Popover,
+  Row,
+  Select,
+  Space,
+  Spin,
+  Tooltip,
+  Typography,
+  message,
+  theme,
+} from "antd";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import MealWeekTable, { type MealDayPlan, type MealSlot } from "@/components/health/MealWeekTable";
 import WorkoutWeekTable, { type WorkoutDayPlan, type WorkoutSlot } from "@/components/health/WorkoutWeekTable";
 import { supabase } from "@/lib/supabase/client";
+import {
+  DEFAULT_HEALTH_GOAL,
+  HEALTH_GOAL_OPTIONS,
+  normalizeHealthGoal,
+  type HealthGoal,
+} from "@/lib/health/goals";
 
 type SelectedContext =
   | {
       date: string;
+      weekStart: string;
       view: "meals" | "workouts";
       selectionType: "day" | "slot";
       slotType?: MealSlot | WorkoutSlot;
@@ -33,9 +57,13 @@ type WorkoutDayPlanApi = {
 };
 
 type ChatMessage = {
+  id: string;
   role: "user" | "assistant";
   content: string;
+  status?: "loading" | "error";
 };
+
+const CONFIRM_PROCEED_REGEX = /(继续|跳过|不填|不填写|不用填|先不填|先不添加|不想填)/;
 
 type HealthPlanResponse<T> = {
   weekPlan: Record<string, unknown> | null;
@@ -43,6 +71,14 @@ type HealthPlanResponse<T> = {
 };
 
 const weekdayLabels = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
+const makeChatMessageId = () => {
+  if (typeof globalThis !== "undefined") {
+    const cryptoAny = globalThis.crypto as unknown as { randomUUID?: () => string } | undefined;
+    if (cryptoAny?.randomUUID) return cryptoAny.randomUUID();
+  }
+  return `msg_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+};
 
 const buildWeekStartMonday = () => {
   const today = dayjs();
@@ -106,18 +142,25 @@ const parseJson = async <T,>(response: Response): Promise<T | null> => {
 
 export default function HealthPage() {
   const { token } = theme.useToken();
+  const router = useRouter();
   const [messageApi, contextHolder] = message.useMessage();
   const [activeTab, setActiveTab] = useState<"meals" | "workouts">("meals");
   const [selectedContext, setSelectedContext] = useState<SelectedContext>(null);
+  const [healthGoal, setHealthGoal] = useState<HealthGoal>(DEFAULT_HEALTH_GOAL);
   const [mealDayPlans, setMealDayPlans] = useState<MealDayPlanApi[]>([]);
   const [workoutDayPlans, setWorkoutDayPlans] = useState<WorkoutDayPlanApi[]>([]);
+  const [prevMealDayPlans, setPrevMealDayPlans] = useState<MealDayPlanApi[]>([]);
+  const [prevWorkoutDayPlans, setPrevWorkoutDayPlans] = useState<WorkoutDayPlanApi[]>([]);
   const [mealChatInput, setMealChatInput] = useState("");
   const [workoutChatInput, setWorkoutChatInput] = useState("");
   const [mealChatHistory, setMealChatHistory] = useState<ChatMessage[]>([]);
   const [workoutChatHistory, setWorkoutChatHistory] = useState<ChatMessage[]>([]);
+  const [pendingMealQuestion, setPendingMealQuestion] = useState<string | null>(null);
+  const [pendingWorkoutQuestion, setPendingWorkoutQuestion] = useState<string | null>(null);
   const [isLoadingPlans, setIsLoadingPlans] = useState(false);
   const [isSendingMeal, setIsSendingMeal] = useState(false);
   const [isSendingWorkout, setIsSendingWorkout] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const mealChatScrollRef = useRef<HTMLDivElement | null>(null);
   const workoutChatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -137,6 +180,46 @@ export default function HealthPage() {
     scrollToBottom(workoutChatScrollRef.current);
   }, [workoutChatHistory.length, scrollToBottom]);
 
+  useEffect(() => {
+    if (!isChatOpen) return;
+    if (activeTab === "meals") scrollToBottom(mealChatScrollRef.current);
+    else scrollToBottom(workoutChatScrollRef.current);
+  }, [activeTab, isChatOpen, scrollToBottom]);
+
+  const loadHealthGoal = useCallback(async () => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) return;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("health_goal")
+      .eq("id", userData.user.id)
+      .maybeSingle();
+
+    if (error) return;
+
+    const normalized = normalizeHealthGoal((data as { health_goal?: unknown } | null)?.health_goal);
+    if (normalized) setHealthGoal(normalized);
+  }, []);
+
+  const persistHealthGoal = useCallback(
+    async (nextGoal: HealthGoal) => {
+      setHealthGoal(nextGoal);
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user) return;
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ health_goal: nextGoal })
+        .eq("id", userData.user.id);
+
+      if (error) {
+        messageApi.error("保存目标失败，请稍后再试");
+      }
+    },
+    [messageApi]
+  );
+
   const renderChatHistory = useCallback(
     (history: ChatMessage[]) => {
       if (!history.length) {
@@ -155,10 +238,12 @@ export default function HealthPage() {
             const bubbleBorderColor = token.colorBorderSecondary;
             const avatarText = isUser ? "我" : "AI";
             const bubbleRadius = isUser ? "12px 12px 2px 12px" : "12px 12px 12px 2px";
+            const isLoading = item.role === "assistant" && item.status === "loading";
+            const isError = item.role === "assistant" && item.status === "error";
 
             return (
               <div
-                key={`${item.role}-${index}`}
+                key={item.id || `${item.role}-${index}`}
                 style={{
                   display: "flex",
                   justifyContent: isUser ? "flex-end" : "flex-start",
@@ -200,7 +285,19 @@ export default function HealthPage() {
                       background: bubbleBackground,
                     }}
                   >
-                    <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{item.content}</Typography.Text>
+                    {isLoading ? (
+                      <Space size={8}>
+                        <Spin size="small" />
+                        <Typography.Text type="secondary">正在思考…</Typography.Text>
+                      </Space>
+                    ) : (
+                      <Typography.Text
+                        style={{ whiteSpace: "pre-wrap" }}
+                        type={isError ? "danger" : undefined}
+                      >
+                        {item.content}
+                      </Typography.Text>
+                    )}
                   </div>
                 </div>
               </div>
@@ -213,8 +310,14 @@ export default function HealthPage() {
   );
 
   const weekStart = useMemo(() => buildWeekStartMonday(), []);
+  const prevWeekStart = useMemo(
+    () => dayjs(weekStart).subtract(7, "day").format("YYYY-MM-DD"),
+    [weekStart]
+  );
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   const weekDays = useMemo(() => buildWeekDays(weekStart), [weekStart]);
+  const prevWeekDays = useMemo(() => buildWeekDays(prevWeekStart), [prevWeekStart]);
+  const todayIso = useMemo(() => dayjs().format("YYYY-MM-DD"), []);
 
   const mealData = useMemo(() => createMealData(weekDays, mealDayPlans), [mealDayPlans, weekDays]);
   const workoutData = useMemo(
@@ -222,14 +325,77 @@ export default function HealthPage() {
     [weekDays, workoutDayPlans]
   );
 
+  const prevMealData = useMemo(
+    () => createMealData(prevWeekDays, prevMealDayPlans),
+    [prevMealDayPlans, prevWeekDays]
+  );
+  const prevWorkoutData = useMemo(
+    () => createWorkoutData(prevWeekDays, prevWorkoutDayPlans),
+    [prevWeekDays, prevWorkoutDayPlans]
+  );
+
   const getAccessToken = useCallback(async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
     const { data, error } = await supabase.auth.getSession();
     if (error) {
       messageApi.error("Unable to read session.");
       return null;
     }
-    return data.session?.access_token ?? null;
+
+    const session = data.session;
+    const expiresAt = typeof session?.expires_at === "number" ? session.expires_at : null;
+
+    if (session?.access_token && expiresAt && expiresAt > nowSeconds + 60) {
+      return session.access_token;
+    }
+
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError) {
+      return session?.access_token ?? null;
+    }
+    return refreshed.session?.access_token ?? session?.access_token ?? null;
   }, [messageApi]);
+
+  const fetchWithAuth = useCallback(
+    async (url: string, init?: RequestInit) => {
+      const token = await getAccessToken();
+      if (!token) {
+        messageApi.warning("登录已过期，请重新登录");
+        router.push("/login");
+        return null;
+      }
+
+      const headers: HeadersInit = {
+        ...(init?.headers ?? {}),
+        Authorization: `Bearer ${token}`,
+      };
+
+      const response = await fetch(url, { ...init, headers });
+      if (response.status !== 401) return response;
+
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      const nextToken = refreshed.session?.access_token;
+      if (!nextToken) {
+        messageApi.warning("登录已过期，请重新登录");
+        router.push("/login");
+        return response;
+      }
+
+      const retryHeaders: HeadersInit = {
+        ...(init?.headers ?? {}),
+        Authorization: `Bearer ${nextToken}`,
+      };
+
+      const retryResponse = await fetch(url, { ...init, headers: retryHeaders });
+      if (retryResponse.status === 401) {
+        messageApi.warning("登录已过期，请重新登录");
+        router.push("/login");
+      }
+      return retryResponse;
+    },
+    [getAccessToken, messageApi, router]
+  );
 
   const loadPlans = useCallback(async () => {
     setIsLoadingPlans(true);
@@ -241,12 +407,20 @@ export default function HealthPage() {
       }
 
       const query = new URLSearchParams({ weekStart }).toString();
-      const headers = { Authorization: `Bearer ${token}` };
+      const prevQuery = new URLSearchParams({ weekStart: prevWeekStart }).toString();
 
-      const [mealResponse, workoutResponse] = await Promise.all([
-        fetch(`/api/health/meal?${query}`, { headers }),
-        fetch(`/api/health/workout?${query}`, { headers }),
-      ]);
+      const [mealResponse, workoutResponse, prevMealResponse, prevWorkoutResponse] =
+        await Promise.all([
+          fetchWithAuth(`/api/health/meal?${query}`),
+          fetchWithAuth(`/api/health/workout?${query}`),
+          fetchWithAuth(`/api/health/meal?${prevQuery}`),
+          fetchWithAuth(`/api/health/workout?${prevQuery}`),
+        ]);
+
+      if (!mealResponse || !workoutResponse || !prevMealResponse || !prevWorkoutResponse) {
+        messageApi.warning("Please login first.");
+        return;
+      }
 
       if (!mealResponse.ok) {
         const payload = await parseJson<{ error?: string }>(mealResponse);
@@ -258,17 +432,32 @@ export default function HealthPage() {
         throw new Error(payload?.error || "Failed to load workout plan");
       }
 
+      if (!prevMealResponse.ok) {
+        const payload = await parseJson<{ error?: string }>(prevMealResponse);
+        throw new Error(payload?.error || "Failed to load previous meal plan");
+      }
+
+      if (!prevWorkoutResponse.ok) {
+        const payload = await parseJson<{ error?: string }>(prevWorkoutResponse);
+        throw new Error(payload?.error || "Failed to load previous workout plan");
+      }
+
       const mealPayload = await parseJson<HealthPlanResponse<MealDayPlanApi>>(mealResponse);
       const workoutPayload = await parseJson<HealthPlanResponse<WorkoutDayPlanApi>>(workoutResponse);
 
+      const prevMealPayload = await parseJson<HealthPlanResponse<MealDayPlanApi>>(prevMealResponse);
+      const prevWorkoutPayload = await parseJson<HealthPlanResponse<WorkoutDayPlanApi>>(prevWorkoutResponse);
+
       setMealDayPlans(mealPayload?.dayPlans ?? []);
       setWorkoutDayPlans(workoutPayload?.dayPlans ?? []);
+      setPrevMealDayPlans(prevMealPayload?.dayPlans ?? []);
+      setPrevWorkoutDayPlans(prevWorkoutPayload?.dayPlans ?? []);
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : "Failed to load plans");
     } finally {
       setIsLoadingPlans(false);
     }
-  }, [getAccessToken, messageApi, weekStart]);
+  }, [fetchWithAuth, getAccessToken, messageApi, prevWeekStart, weekStart]);
 
   const sendChatMessage = useCallback(
     async (view: "meals" | "workouts") => {
@@ -282,6 +471,28 @@ export default function HealthPage() {
       }
 
       const hasSelection = selectedContext?.view === view && Boolean(selectedContext?.date);
+      const contextWeekStart = hasSelection ? selectedContext?.weekStart : weekStart;
+      const confirmProceed = CONFIRM_PROCEED_REGEX.test(trimmed);
+      const pendingQuestion = isMeals ? pendingMealQuestion : pendingWorkoutQuestion;
+      const messageForAgent =
+        confirmProceed && pendingQuestion
+          ? `继续（已确认跳过身体信息）。原问题：${pendingQuestion}`
+          : trimmed;
+
+      const getExistingDayPlansCount = () => {
+        if (view === "meals") {
+          if (contextWeekStart === weekStart) return mealDayPlans.length;
+          if (contextWeekStart === prevWeekStart) return prevMealDayPlans.length;
+          return 0;
+        }
+        if (contextWeekStart === weekStart) return workoutDayPlans.length;
+        if (contextWeekStart === prevWeekStart) return prevWorkoutDayPlans.length;
+        return 0;
+      };
+
+      // Only (re)generate when we don't have any plan data yet for that week.
+      // If plans already exist, go straight to agent-chat (even without selecting a day/slot).
+      const shouldRegenerateWeek = !hasSelection && getExistingDayPlansCount() === 0;
       const context = hasSelection
         ? {
             view,
@@ -290,32 +501,95 @@ export default function HealthPage() {
           }
         : { view };
 
+      const assistantPlaceholderId = makeChatMessageId();
+
       if (isMeals) {
-        setMealChatHistory((prev) => [...prev, { role: "user", content: trimmed }]);
+        setMealChatHistory((prev) => [
+          ...prev,
+          { id: makeChatMessageId(), role: "user", content: trimmed },
+          { id: assistantPlaceholderId, role: "assistant", content: "", status: "loading" },
+        ]);
         setMealChatInput("");
         setIsSendingMeal(true);
       } else {
-        setWorkoutChatHistory((prev) => [...prev, { role: "user", content: trimmed }]);
+        setWorkoutChatHistory((prev) => [
+          ...prev,
+          { id: makeChatMessageId(), role: "user", content: trimmed },
+          { id: assistantPlaceholderId, role: "assistant", content: "", status: "loading" },
+        ]);
         setWorkoutChatInput("");
         setIsSendingWorkout(true);
       }
+
+      const replaceAssistantPlaceholder = (next: { content: string; status?: ChatMessage["status"] }) => {
+        if (isMeals) {
+          setMealChatHistory((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantPlaceholderId
+                ? { ...msg, role: "assistant", content: next.content, status: next.status }
+                : msg
+            )
+          );
+        } else {
+          setWorkoutChatHistory((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantPlaceholderId
+                ? { ...msg, role: "assistant", content: next.content, status: next.status }
+                : msg
+            )
+          );
+        }
+      };
 
       try {
         const token = await getAccessToken();
         if (!token) {
           messageApi.warning("Please login first.");
+          replaceAssistantPlaceholder({ content: "未登录或登录已过期，请重新登录后再试。", status: "error" });
           return;
         }
 
-        if (!hasSelection) {
-          const regenResponse = await fetch("/api/health/regenerate-week", {
+        if (shouldRegenerateWeek) {
+          const regenResponse = await fetchWithAuth("/api/health/regenerate-week", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ weekStart, timezone }),
+            body: JSON.stringify({
+              weekStart: contextWeekStart,
+              timezone,
+              goal: healthGoal,
+              allowMissingBodyMetrics: confirmProceed,
+            }),
           });
+
+          if (!regenResponse) {
+            messageApi.warning("Please login first.");
+            return;
+          }
+
+          if (regenResponse.status === 409) {
+            const payload = await parseJson<{
+              requiresConfirmation?: boolean;
+              confirmationHint?: string;
+            }>(regenResponse);
+
+            const hint = payload?.confirmationHint?.trim();
+            const assistantMessage =
+              hint ||
+              "检测到你还没有填写身体信息。你可以先去个人中心填写：/profile#body。\n如果你不想填写，也可以继续：请回复“继续”或“跳过”。";
+
+            if (isMeals) {
+              if (!confirmProceed) setPendingMealQuestion(trimmed);
+              replaceAssistantPlaceholder({ content: assistantMessage });
+            } else {
+              if (!confirmProceed) setPendingWorkoutQuestion(trimmed);
+              replaceAssistantPlaceholder({ content: assistantMessage });
+            }
+
+            setIsChatOpen(true);
+            return;
+          }
 
           if (!regenResponse.ok) {
             const payload = await parseJson<{ error?: string }>(regenResponse);
@@ -323,21 +597,31 @@ export default function HealthPage() {
           }
 
           await loadPlans();
+
+          if (confirmProceed) {
+            if (isMeals) setPendingMealQuestion(null);
+            else setPendingWorkoutQuestion(null);
+          }
         }
 
-        const response = await fetch("/api/health/agent-chat", {
+        const response = await fetchWithAuth("/api/health/agent-chat", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            message: trimmed,
-            weekStart,
+            message: messageForAgent,
+            weekStart: contextWeekStart,
             timezone,
             context,
+            goal: healthGoal,
           }),
         });
+
+        if (!response) {
+          messageApi.warning("Please login first.");
+          return;
+        }
 
         if (!response.ok) {
           const payload = await parseJson<{ error?: string }>(response);
@@ -348,27 +632,37 @@ export default function HealthPage() {
         const reply = payload?.reply?.trim();
         if (!reply) throw new Error("Empty agent response");
 
-        if (isMeals) {
-          setMealChatHistory((prev) => [...prev, { role: "assistant", content: reply }]);
-        } else {
-          setWorkoutChatHistory((prev) => [...prev, { role: "assistant", content: reply }]);
-        }
+        replaceAssistantPlaceholder({ content: reply });
+
+        // The agent may have updated the plan via tools (update_*), so refresh the tables.
+        void loadPlans();
       } catch (error) {
-        messageApi.error(error instanceof Error ? error.message : "Agent request failed");
+        const text = error instanceof Error ? error.message : "Agent request failed";
+        messageApi.error(text);
+        replaceAssistantPlaceholder({ content: text, status: "error" });
       } finally {
         if (isMeals) setIsSendingMeal(false);
         else setIsSendingWorkout(false);
       }
     },
     [
+      fetchWithAuth,
       getAccessToken,
       loadPlans,
+      healthGoal,
       mealChatInput,
+      mealDayPlans.length,
+      prevMealDayPlans.length,
+      pendingMealQuestion,
+      pendingWorkoutQuestion,
+      prevWeekStart,
       messageApi,
       selectedContext,
       timezone,
       weekStart,
       workoutChatInput,
+      workoutDayPlans.length,
+      prevWorkoutDayPlans.length,
     ]
   );
 
@@ -376,26 +670,46 @@ export default function HealthPage() {
     void loadPlans();
   }, [loadPlans]);
 
+  useEffect(() => {
+    void loadHealthGoal();
+  }, [loadHealthGoal]);
+
   const updateSelection = useCallback(
     (
       view: "meals" | "workouts",
+      weekStartForSelection: string,
       next: { date: string; selectionType: "day" | "slot"; slotType?: MealSlot | WorkoutSlot }
     ) => {
       setSelectedContext((prev) => {
         if (
           prev &&
           prev.view === view &&
+          prev.weekStart === weekStartForSelection &&
           prev.date === next.date &&
           prev.selectionType === next.selectionType &&
           prev.slotType === next.slotType
         ) {
           return null;
         }
-        return { view, ...next };
+        return { view, weekStart: weekStartForSelection, ...next };
       });
     },
     []
   );
+
+  const activeHistory = activeTab === "meals" ? mealChatHistory : workoutChatHistory;
+  const activeChatInput = activeTab === "meals" ? mealChatInput : workoutChatInput;
+  const activeChatScrollRef = activeTab === "meals" ? mealChatScrollRef : workoutChatScrollRef;
+  const isSendingActive = activeTab === "meals" ? isSendingMeal : isSendingWorkout;
+
+  const selectedLabel = useMemo(() => {
+    if (!selectedContext || selectedContext.view !== activeTab) {
+      return "可先点击计划中的某一天（或某一项）作为上下文，再开始提问。";
+    }
+    const base = `${selectedContext.weekStart} 周 / ${selectedContext.date}`;
+    if (selectedContext.selectionType === "day") return `已选中：${base}`;
+    return `已选中：${base} / ${String(selectedContext.slotType ?? "")}`;
+  }, [activeTab, selectedContext]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -444,19 +758,144 @@ export default function HealthPage() {
         activeTabKey={activeTab}
         onTabChange={(key) => setActiveTab(key as "meals" | "workouts")}
       >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            marginBottom: 12,
+          }}
+        >
+          <Space size={12} wrap align="start">
+            <Space size={6}>
+              <Typography.Text type="secondary">近期目标</Typography.Text>
+              <Select
+                value={healthGoal}
+                style={{ minWidth: 160 }}
+                optionLabelProp="plainLabel"
+                options={HEALTH_GOAL_OPTIONS.map((opt) => ({
+                  value: opt.value,
+                  plainLabel: opt.label,
+                  label: (
+                    <Space size={6}>
+                      <span>{opt.label}</span>
+                      <Tooltip title={opt.hint} placement="right">
+                        <QuestionCircleOutlined style={{ color: token.colorTextSecondary }} />
+                      </Tooltip>
+                    </Space>
+                  ),
+                }))}
+                onChange={(value) => {
+                  const normalized = normalizeHealthGoal(value) ?? DEFAULT_HEALTH_GOAL;
+                  void persistHealthGoal(normalized);
+                }}
+              />
+            </Space>
+
+            <Link href="/profile#body" prefetch={false}>
+              <Button type="link">修改身体信息</Button>
+            </Link>
+          </Space>
+
+          <Popover
+            placement="bottomRight"
+            trigger="click"
+            open={isChatOpen}
+            onOpenChange={(open) => setIsChatOpen(open)}
+            destroyOnHidden
+            content={
+              <div style={{ width: 420, display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <Typography.Text strong>
+                    {activeTab === "meals" ? "健康助理" : "训练助理"}
+                  </Typography.Text>
+                  <Button size="small" onClick={() => setIsChatOpen(false)}>
+                    收起
+                  </Button>
+                </div>
+
+                <Typography.Text type="secondary">{selectedLabel}</Typography.Text>
+
+                <div
+                  ref={activeChatScrollRef}
+                  style={{
+                    height: 360,
+                    overflowY: "auto",
+                    padding: 12,
+                    borderRadius: 12,
+                    background: token.colorBgLayout,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                  }}
+                >
+                  {renderChatHistory(activeHistory)}
+                </div>
+
+                <Input.TextArea
+                  rows={3}
+                  placeholder={
+                    activeTab === "meals"
+                      ? "例如：今天午餐吃什么更合适？"
+                      : "例如：这天的训练强度是否合适？如何调整？"
+                  }
+                  value={activeChatInput}
+                  onChange={(event) =>
+                    activeTab === "meals"
+                      ? setMealChatInput(event.target.value)
+                      : setWorkoutChatInput(event.target.value)
+                  }
+                />
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <Button
+                    onClick={() => {
+                      if (activeTab === "meals") {
+                        setMealChatHistory([]);
+                        setPendingMealQuestion(null);
+                      } else {
+                        setWorkoutChatHistory([]);
+                        setPendingWorkoutQuestion(null);
+                      }
+                    }}
+                  >
+                    清空聊天记录
+                  </Button>
+                  <Button
+                    type="primary"
+                    loading={isSendingActive}
+                    onClick={() => sendChatMessage(activeTab)}
+                  >
+                    发送
+                  </Button>
+                </div>
+              </div>
+            }
+          >
+            <Tooltip
+              placement="left"
+              title={
+                "AI 可以：生成/优化一周三餐与健身计划；基于你选中的日期/餐次/训练给建议；按你的要求修改计划；也能给单餐吃什么建议（不写入计划）。"
+              }
+            >
+              <Button type="primary">打开 AI 对话</Button>
+            </Tooltip>
+          </Popover>
+        </div>
+
         {activeTab === "meals" ? (
-          <Row gutter={[16, 16]} align="stretch">
-            <Col xs={24} lg={16} style={{ display: "flex" }}>
+          <Row gutter={[16, 16]} align="top">
+            <Col xs={24} lg={12} style={{ display: "flex" }}>
               <Card
-                title="本周饮食计划"
+                title="上周饮食计划"
                 loading={isLoadingPlans}
                 styles={{ body: { paddingTop: 12 } }}
-                style={{ minHeight: 680, height: "100%", flex: 1 }}
+                style={{ width: "100%" }}
               >
                 <MealWeekTable
-                  data={mealData}
+                  data={prevMealData}
                   selected={
-                    selectedContext?.view === "meals"
+                    selectedContext?.view === "meals" && selectedContext.weekStart === prevWeekStart
                       ? {
                           date: selectedContext.date,
                           selectionType: selectedContext.selectionType,
@@ -467,82 +906,51 @@ export default function HealthPage() {
                         }
                       : null
                   }
-                  onSelect={(selection) => updateSelection("meals", selection)}
+                  onSelect={(selection) => updateSelection("meals", prevWeekStart, selection)}
                 />
               </Card>
             </Col>
-            <Col xs={24} lg={8} style={{ display: "flex" }}>
+            <Col xs={24} lg={12} style={{ display: "flex" }}>
               <Card
-                title="健康助理"
-                styles={{ body: { paddingTop: 12, display: "flex", flexDirection: "column" } }}
-                style={{ minHeight: 680, height: "100%", flex: 1 }}
+                title="本周饮食计划"
+                loading={isLoadingPlans}
+                styles={{ body: { paddingTop: 12 } }}
+                style={{ width: "100%" }}
               >
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
-                  <Typography.Text type="secondary">
-                    {selectedContext?.view === "meals"
-                      ? selectedContext.selectionType === "day"
-                        ? `已选中：${selectedContext.date}`
-                        : `已选中：${selectedContext.date} / ${selectedContext.slotType}`
-                      : "可先点击左侧某一天（或某一餐）作为上下文，再开始提问；也可以直接提问自动生成整周。"}
-                  </Typography.Text>
-
-                  <div
-                    ref={mealChatScrollRef}
-                    style={{
-                      flex: 1,
-                      minHeight: 360,
-                      overflowY: "auto",
-                      padding: 12,
-                      borderRadius: 12,
-                      background: token.colorBgLayout,
-                      border: `1px solid ${token.colorBorderSecondary}`,
-                    }}
-                  >
-                    {renderChatHistory(mealChatHistory)}
-                  </div>
-
-                  <div
-                    style={{
-                      borderTop: `1px solid ${token.colorBorderSecondary}`,
-                      paddingTop: 12,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 8,
-                    }}
-                  >
-                    <Input.TextArea
-                      rows={3}
-                      placeholder="例如：这天的早餐热量会不会太高？能替换成更健康的吗？"
-                      value={mealChatInput}
-                      onChange={(event) => setMealChatInput(event.target.value)}
-                    />
-                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                      <Button
-                        type="primary"
-                        loading={isSendingMeal}
-                        onClick={() => sendChatMessage("meals")}
-                      >
-                        发送
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                <MealWeekTable
+                  data={mealData}
+                  highlightDate={todayIso}
+                  selected={
+                    selectedContext?.view === "meals" && selectedContext.weekStart === weekStart
+                      ? {
+                          date: selectedContext.date,
+                          selectionType: selectedContext.selectionType,
+                          slotType:
+                            selectedContext.selectionType === "slot"
+                              ? (selectedContext.slotType as MealSlot)
+                              : undefined,
+                        }
+                      : null
+                  }
+                  onSelect={(selection) => updateSelection("meals", weekStart, selection)}
+                />
               </Card>
             </Col>
           </Row>
         ) : (
-          <Row gutter={[16, 16]} align="stretch">
-            <Col xs={24} lg={16} style={{ display: "flex" }}>
+          <Row gutter={[16, 16]} align="top">
+            <Col xs={24} lg={12} style={{ display: "flex" }}>
               <Card
-                title="本周健身计划"
+                title="上周健身计划"
                 loading={isLoadingPlans}
                 styles={{ body: { paddingTop: 12 } }}
-                style={{ minHeight: 680, height: "100%", flex: 1 }}
+                style={{ width: "100%" }}
               >
                 <WorkoutWeekTable
-                  data={workoutData}
+                  data={prevWorkoutData}
                   selected={
-                    selectedContext?.view === "workouts"
+                    selectedContext?.view === "workouts" &&
+                    selectedContext.weekStart === prevWeekStart
                       ? {
                           date: selectedContext.date,
                           selectionType: selectedContext.selectionType,
@@ -553,66 +961,35 @@ export default function HealthPage() {
                         }
                       : null
                   }
-                  onSelect={(selection) => updateSelection("workouts", selection)}
+                  onSelect={(selection) => updateSelection("workouts", prevWeekStart, selection)}
                 />
               </Card>
             </Col>
-            <Col xs={24} lg={8} style={{ display: "flex" }}>
+            <Col xs={24} lg={12} style={{ display: "flex" }}>
               <Card
-                title="训练助理"
-                styles={{ body: { paddingTop: 12, display: "flex", flexDirection: "column" } }}
-                style={{ minHeight: 680, height: "100%", flex: 1 }}
+                title="本周健身计划"
+                loading={isLoadingPlans}
+                styles={{ body: { paddingTop: 12 } }}
+                style={{ width: "100%" }}
               >
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
-                  <Typography.Text type="secondary">
-                    {selectedContext?.view === "workouts"
-                      ? selectedContext.selectionType === "day"
-                        ? `已选中：${selectedContext.date}`
-                        : `已选中：${selectedContext.date} / ${selectedContext.slotType}`
-                      : "可先点击左侧某一天（或某项训练）作为上下文，再开始提问；也可以直接提问自动生成整周。"}
-                  </Typography.Text>
-
-                  <div
-                    ref={workoutChatScrollRef}
-                    style={{
-                      flex: 1,
-                      minHeight: 360,
-                      overflowY: "auto",
-                      padding: 12,
-                      borderRadius: 12,
-                      background: token.colorBgLayout,
-                      border: `1px solid ${token.colorBorderSecondary}`,
-                    }}
-                  >
-                    {renderChatHistory(workoutChatHistory)}
-                  </div>
-
-                  <div
-                    style={{
-                      borderTop: `1px solid ${token.colorBorderSecondary}`,
-                      paddingTop: 12,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 8,
-                    }}
-                  >
-                    <Input.TextArea
-                      rows={3}
-                      placeholder="例如：这天的有氧和无氧安排合理吗？如何优化强度和恢复？"
-                      value={workoutChatInput}
-                      onChange={(event) => setWorkoutChatInput(event.target.value)}
-                    />
-                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                      <Button
-                        type="primary"
-                        loading={isSendingWorkout}
-                        onClick={() => sendChatMessage("workouts")}
-                      >
-                        发送
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                <WorkoutWeekTable
+                  data={workoutData}
+                  highlightDate={todayIso}
+                  selected={
+                    selectedContext?.view === "workouts" &&
+                    selectedContext.weekStart === weekStart
+                      ? {
+                          date: selectedContext.date,
+                          selectionType: selectedContext.selectionType,
+                          slotType:
+                            selectedContext.selectionType === "slot"
+                              ? (selectedContext.slotType as WorkoutSlot)
+                              : undefined,
+                        }
+                      : null
+                  }
+                  onSelect={(selection) => updateSelection("workouts", weekStart, selection)}
+                />
               </Card>
             </Col>
           </Row>

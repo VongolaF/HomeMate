@@ -1,6 +1,11 @@
 import { DynamicTool } from "@langchain/core/tools";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  DEFAULT_HEALTH_GOAL,
+  healthGoalToPrompt,
+  normalizeHealthGoal,
+} from "@/lib/health/goals";
 
 type AgentToolContext = {
   supabase: ReturnType<typeof createServerSupabaseClient>;
@@ -39,6 +44,15 @@ type WorkoutDayUpdateInput = {
 
 type WeekPlanReadInput = {
   weekStart?: unknown;
+};
+
+type SuggestMealIdeasInput = {
+  weekStart?: unknown;
+  date?: unknown;
+  mealType?: unknown;
+  slotType?: unknown;
+  goal?: unknown;
+  note?: unknown;
 };
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -113,6 +127,12 @@ const parseWeekReadInput = (input: string) => {
   return parsed ?? ({} as WeekPlanReadInput);
 };
 
+const parseSuggestMealIdeasInput = (input: string) => {
+  if (!input || !input.trim()) return {} as SuggestMealIdeasInput;
+  const parsed = parseJsonInput(input) as SuggestMealIdeasInput | null;
+  return parsed ?? ({} as SuggestMealIdeasInput);
+};
+
 const loadWeekPlanId = async (
   context: AgentToolContext,
   table: "meal_week_plans" | "workout_week_plans",
@@ -176,6 +196,136 @@ const buildWorkoutUpdates = (payload: WorkoutDayUpdateInput) => {
     }
   }
   return Object.keys(updates).length > 0 ? updates : null;
+};
+
+const MEAL_SLOTS = ["breakfast", "lunch", "dinner", "snacks"] as const;
+type MealSlot = (typeof MEAL_SLOTS)[number];
+
+const normalizeMealSlot = (value: unknown): MealSlot | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return (MEAL_SLOTS as readonly string[]).includes(trimmed) ? (trimmed as MealSlot) : null;
+};
+
+const mealSlotLabel: Record<MealSlot, string> = {
+  breakfast: "早餐",
+  lunch: "午餐",
+  dinner: "晚餐",
+  snacks: "加餐",
+};
+
+const buildStaticIdeas = (slot: MealSlot, goal: string) => {
+  const isFatLoss = goal === "fat_loss";
+  const isMuscleGain = goal === "muscle_gain";
+
+  const baseBySlot: Record<MealSlot, string[]> = {
+    breakfast: [
+      "希腊酸奶 + 蓝莓 + 一小把坚果",
+      "燕麦粥 + 鸡蛋（水煮/煎蛋少油）",
+      "全麦吐司 + 牛油果 + 煎蛋",
+      "豆浆 + 鸡蛋 + 番茄/黄瓜",
+      "香蕉 + 花生酱（薄抹）+ 牛奶/无糖酸奶",
+    ],
+    lunch: [
+      "鸡胸/鸡腿排 + 西兰花/时蔬 + 糙米/红薯",
+      "三文鱼/鳕鱼 + 沙拉碗（加豆类/玉米）",
+      "牛肉番茄意面（全麦面更佳）+ 一份蔬菜",
+      "豆腐/鸡蛋 + 什锦蔬菜炒（少油少盐）",
+      "盖饭：卤牛肉/卤鸡 + 半碗米饭 + 双倍蔬菜",
+    ],
+    dinner: [
+      "清炒时蔬 + 瘦肉/鱼/豆腐 + 少量主食",
+      "番茄蛋花汤 + 凉拌黄瓜 + 一份蛋白（鸡/鱼/豆）",
+      "杂粮粥 + 卤鸡/卤牛 + 蔬菜",
+      "菌菇鸡肉/牛肉炒（少油）+ 一份蔬菜",
+      "沙拉 + 煎/烤蛋白（鸡胸/虾/豆腐）",
+    ],
+    snacks: [
+      "水果（1 份）+ 无糖酸奶",
+      "蛋白棒/蛋白奶（看配料表低糖）",
+      "一小把坚果 + 水果",
+      "水煮蛋 1-2 个",
+      "毛豆/豆干（少盐）",
+    ],
+  };
+
+  const fatLossTweaks = [
+    "优先：高蛋白 + 高纤维（蔬菜/豆类），少油少糖",
+    "主食可减到半份，或用红薯/杂粮替代",
+  ];
+
+  const muscleGainTweaks = [
+    "优先：蛋白充足（每餐至少 1 掌心蛋白）+ 适量主食",
+    "训练日可把主食/优质脂肪（坚果/牛油果）略加一点",
+  ];
+
+  return {
+    ideas: baseBySlot[slot],
+    tweaks: isFatLoss ? fatLossTweaks : isMuscleGain ? muscleGainTweaks : ["以可持续为主，注意蛋白 + 蔬菜 + 适量主食"] ,
+  };
+};
+
+const suggestMealIdeas = async (input: string, context: AgentToolContext) => {
+  const payload = parseSuggestMealIdeasInput(input);
+
+  const weekStart = validateWeekStart(payload.weekStart, context);
+  if (!weekStart) return "Invalid weekStart.";
+
+  const slot =
+    normalizeMealSlot(payload.mealType) ||
+    normalizeMealSlot(payload.slotType) ||
+    ("lunch" as MealSlot);
+
+  const date =
+    payload.date === undefined
+      ? null
+      : validateDate(payload.date, weekStart);
+  if (payload.date !== undefined && !date) return "Invalid date.";
+
+  const goal = normalizeHealthGoal(payload.goal) ?? DEFAULT_HEALTH_GOAL;
+  const note = normalizeText(payload.note);
+  if (note !== null && typeof note !== "string") return "Invalid note.";
+
+  let planned: string | null = null;
+  if (date) {
+    const weekPlanId = await loadWeekPlanId(context, "meal_week_plans", weekStart);
+    if (weekPlanId) {
+      const { data } = await context.supabase
+        .from("meal_day_plans")
+        .select("breakfast, lunch, dinner, snacks")
+        .eq("week_plan_id", weekPlanId)
+        .eq("date", date)
+        .maybeSingle();
+
+      const record = (data ?? null) as Record<string, unknown> | null;
+      const value = record ? record[slot] : null;
+      planned = typeof value === "string" ? value : null;
+    }
+  }
+
+  const { ideas, tweaks } = buildStaticIdeas(slot, goal);
+
+  const headerLines: string[] = [];
+  headerLines.push(`${mealSlotLabel[slot]}建议`);
+  headerLines.push(healthGoalToPrompt(goal));
+  if (date) headerLines.push(`日期：${date}`);
+  if (planned) headerLines.push(`你当前计划的${mealSlotLabel[slot]}：${planned}`);
+  if (note) headerLines.push(`补充：${note}`);
+
+  const lines: string[] = [];
+  lines.push(...headerLines);
+  lines.push("备选想法（任选 1 个）：");
+  ideas.slice(0, 5).forEach((idea, index) => {
+    lines.push(`${index + 1}. ${idea}`);
+  });
+  lines.push("小贴士：");
+  tweaks.forEach((tip, index) => {
+    lines.push(`${index + 1}. ${tip}`);
+  });
+  lines.push("如果你有忌口/过敏/预算/能否外卖等限制，告诉我我再把建议收敛到更具体。");
+
+  return lines.join("\n");
 };
 
 const updateMealItem = async (input: string, context: AgentToolContext) => {
@@ -327,6 +477,12 @@ export const buildHealthAgentTools = (context: AgentToolContext) => [
     description:
       "Read the current user's meal week plan for this weekStart. Input JSON optional: { weekStart }. Returns JSON string.",
     func: (input) => readMealWeek(input, context),
+  }),
+  new DynamicTool({
+    name: "suggest_meal_ideas",
+    description:
+      "Suggest what to eat for a single meal (breakfast/lunch/dinner/snacks). This tool MUST NOT update the database. Input JSON: { weekStart, date?, mealType?, goal?, note? }. Returns plain text suggestions.",
+    func: (input) => suggestMealIdeas(input, context),
   }),
   new DynamicTool({
     name: "get_workout_week_plan",
