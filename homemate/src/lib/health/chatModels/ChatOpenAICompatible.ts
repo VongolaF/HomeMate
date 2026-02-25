@@ -163,8 +163,8 @@ export class ChatOpenAICompatible extends BaseChatModel<ChatOpenAICompatibleCall
     if ((options as any)?.tool_choice !== undefined) payload.tool_choice = (options as any).tool_choice;
     if (boundTools.length) payload.tools = boundTools;
 
-    let res: Response;
-    let rawText: string;
+    let res: Response | null = null;
+    let rawText: string | null = null;
 
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
@@ -207,19 +207,15 @@ export class ChatOpenAICompatible extends BaseChatModel<ChatOpenAICompatibleCall
       }
     }
 
-    // @ts-expect-error - res/rawText are set by the loop or we threw above.
     if (!res) {
       throw new Error("LLM request failed: no response");
     }
 
-    // @ts-expect-error - rawText is set by the loop or we threw above.
-    if (rawText === undefined) {
+    if (rawText === null) {
       throw new Error("LLM request failed: empty response");
     }
 
-    // @ts-expect-error - res/rawText are set by the loop.
     if (!res.ok) {
-      // @ts-expect-error - rawText is set by the loop.
       throw new Error(`LLM request failed (${res.status}): ${rawText}`);
     }
 
