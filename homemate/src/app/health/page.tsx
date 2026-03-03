@@ -74,8 +74,6 @@ type ChatMessage = {
   status?: "loading" | "error";
 };
 
-const CONFIRM_PROCEED_REGEX = /(继续|跳过|不填|不填写|不用填|先不填|先不添加|不想填)/;
-
 type HealthPlanResponse<T> = {
   weekPlan: Record<string, unknown> | null;
   dayPlans: T[];
@@ -179,8 +177,6 @@ export default function HealthPage() {
   const [workoutChatInput, setWorkoutChatInput] = useState("");
   const [mealChatHistory, setMealChatHistory] = useState<ChatMessage[]>([]);
   const [workoutChatHistory, setWorkoutChatHistory] = useState<ChatMessage[]>([]);
-  const [pendingMealQuestion, setPendingMealQuestion] = useState<string | null>(null);
-  const [pendingWorkoutQuestion, setPendingWorkoutQuestion] = useState<string | null>(null);
   const [isLoadingPlans, setIsLoadingPlans] = useState(false);
   const [isSendingMeal, setIsSendingMeal] = useState(false);
   const [isSendingWorkout, setIsSendingWorkout] = useState(false);
@@ -501,28 +497,9 @@ export default function HealthPage() {
 
       const hasSelection = selectedContext?.view === view && Boolean(selectedContext?.date);
       const contextWeekStart = hasSelection ? selectedContext?.weekStart : weekStart;
-      const confirmProceed = CONFIRM_PROCEED_REGEX.test(trimmed);
-      const pendingQuestion = isMeals ? pendingMealQuestion : pendingWorkoutQuestion;
-      const messageForAgent =
-        confirmProceed && pendingQuestion
-          ? `继续（已确认跳过身体信息）。原问题：${pendingQuestion}`
-          : trimmed;
+      const messageForAgent = trimmed;
       const historyPayload = buildHistoryPayload(isMeals ? mealChatHistory : workoutChatHistory);
 
-      const getExistingDayPlansCount = () => {
-        if (view === "meals") {
-          if (contextWeekStart === weekStart) return mealDayPlans.length;
-          if (contextWeekStart === prevWeekStart) return prevMealDayPlans.length;
-          return 0;
-        }
-        if (contextWeekStart === weekStart) return workoutDayPlans.length;
-        if (contextWeekStart === prevWeekStart) return prevWorkoutDayPlans.length;
-        return 0;
-      };
-
-      // Only (re)generate when we don't have any plan data yet for that week.
-      // If plans already exist, go straight to agent-chat (even without selecting a day/slot).
-      const shouldRegenerateWeek = !hasSelection && getExistingDayPlansCount() === 0;
       const context = hasSelection
         ? {
             view,
@@ -579,61 +556,6 @@ export default function HealthPage() {
           return;
         }
 
-        if (shouldRegenerateWeek) {
-          const regenResponse = await fetchWithAuth("/api/health/regenerate-week", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              weekStart: contextWeekStart,
-              timezone,
-              goal: healthGoal,
-              allowMissingBodyMetrics: confirmProceed,
-            }),
-          });
-
-          if (!regenResponse) {
-            messageApi.warning("Please login first.");
-            return;
-          }
-
-          if (regenResponse.status === 409) {
-            const payload = await parseJson<{
-              requiresConfirmation?: boolean;
-              confirmationHint?: string;
-            }>(regenResponse);
-
-            const hint = payload?.confirmationHint?.trim();
-            const assistantMessage =
-              hint ||
-              "检测到你还没有填写身体信息。你可以先去个人中心填写：/profile#body。\n如果你不想填写，也可以继续：请回复“继续”或“跳过”。";
-
-            if (isMeals) {
-              if (!confirmProceed) setPendingMealQuestion(trimmed);
-              replaceAssistantPlaceholder({ content: assistantMessage });
-            } else {
-              if (!confirmProceed) setPendingWorkoutQuestion(trimmed);
-              replaceAssistantPlaceholder({ content: assistantMessage });
-            }
-
-            setIsChatOpen(true);
-            return;
-          }
-
-          if (!regenResponse.ok) {
-            const payload = await parseJson<{ error?: string }>(regenResponse);
-            throw new Error(payload?.error || "Failed to regenerate week plan");
-          }
-
-          await loadPlans();
-
-          if (confirmProceed) {
-            if (isMeals) setPendingMealQuestion(null);
-            else setPendingWorkoutQuestion(null);
-          }
-        }
-
         const response = await fetchWithAuth("/api/health/agent-chat", {
           method: "POST",
           headers: {
@@ -683,10 +605,6 @@ export default function HealthPage() {
       healthGoal,
       mealChatInput,
       mealChatHistory,
-      mealDayPlans.length,
-      prevMealDayPlans.length,
-      pendingMealQuestion,
-      pendingWorkoutQuestion,
       prevWeekStart,
       messageApi,
       selectedContext,
@@ -694,8 +612,6 @@ export default function HealthPage() {
       weekStart,
       workoutChatInput,
       workoutChatHistory,
-      workoutDayPlans.length,
-      prevWorkoutDayPlans.length,
     ]
   );
 
