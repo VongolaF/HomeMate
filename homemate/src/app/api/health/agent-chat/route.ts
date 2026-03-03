@@ -4,7 +4,8 @@ import { createAgent } from "langchain";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildHealthAgentTools } from "@/lib/health/agentTools";
-import { createHealthChatModels } from "@/lib/health/llm";
+import { sanitizeChatHistory } from "@/lib/health/chatHistory";
+import { createHealthChatModel } from "@/lib/health/llm";
 import {
   DEFAULT_HEALTH_GOAL,
   healthGoalToPrompt,
@@ -50,6 +51,7 @@ type HealthChatBody = {
   timezone?: string;
   context?: HealthChatContext;
   goal?: unknown;
+  history?: unknown;
 };
 
 const CONFIRM_PROCEED_REGEX = /(继续|跳过|不填|不填写|不用填|先不填|先不添加|不想填)/;
@@ -118,8 +120,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const models = createHealthChatModels({ temperature: 0.3 });
-  if (!models) {
+  const sanitizedHistory = sanitizeChatHistory(body.history);
+
+  const llm = createHealthChatModel({ temperature: 0.3 });
+  if (!llm) {
     return NextResponse.json({ error: "Missing LLM configuration" }, { status: 500 });
   }
 
@@ -207,22 +211,25 @@ Meal ideas (no DB writes):
 Edits:
 - Only call update_* tools if the user explicitly asks to change the plan.
 
+Regeneration:
+- Only when the user explicitly asks to regenerate the current week plan for the active tab.
+- Call regenerate_week_plan with { weekStart, timezone, view }.
+- If the user confirms to proceed without body metrics (e.g. "继续"/"跳过"), set allowMissingBodyMetrics: true.
+
 Output:
 - Reply in concise plain text in Simplified Chinese. No markdown.`;
 
-  const buildAgent = (model: any) =>
-    createAgent({
-      model,
-      tools,
-      systemPrompt,
-    });
-
-  const agent = buildAgent(models.primary);
+  const agent = createAgent({
+    model: llm,
+    tools,
+    systemPrompt,
+  });
 
   let result: { messages?: Array<{ content?: unknown }> } | null = null;
   try {
     result = (await agent.invoke({
       messages: [
+        ...sanitizedHistory,
         {
           role: "user",
           content: `User message: ${message}\nContext: ${JSON.stringify({
@@ -235,46 +242,14 @@ Output:
       ],
     })) as { messages?: Array<{ content?: unknown }> };
   } catch (error) {
-    if (models.fallback) {
-      try {
-        const fallbackAgent = buildAgent(models.fallback);
-        result = (await fallbackAgent.invoke({
-          messages: [
-            {
-              role: "user",
-              content: `User message: ${message}\nContext: ${JSON.stringify({
-                weekStart,
-                timezone,
-                selected: body.context ?? null,
-                goal: effectiveGoal,
-              })}\nReturn plain text for the reply.`,
-            },
-          ],
-        })) as { messages?: Array<{ content?: unknown }> };
-      } catch (fallbackError) {
-        const details =
-          process.env.NODE_ENV !== "production"
-            ? {
-                primary: error instanceof Error ? error.message : String(error),
-                fallback:
-                  fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-              }
-            : undefined;
-        return NextResponse.json(
-          { error: "Agent execution failed", ...(details ? { details } : {}) },
-          { status: 502 }
-        );
-      }
-    } else {
-      const details =
-        process.env.NODE_ENV !== "production"
-          ? { message: error instanceof Error ? error.message : String(error) }
-          : undefined;
-      return NextResponse.json(
-        { error: "Agent execution failed", ...(details ? { details } : {}) },
-        { status: 502 }
-      );
-    }
+    const details =
+      process.env.NODE_ENV !== "production"
+        ? { message: error instanceof Error ? error.message : String(error) }
+        : undefined;
+    return NextResponse.json(
+      { error: "Agent execution failed", ...(details ? { details } : {}) },
+      { status: 502 }
+    );
   }
 
   const lastMessage = result?.messages?.[result.messages.length - 1];

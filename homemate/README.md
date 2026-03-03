@@ -14,6 +14,8 @@ This repo supports three app environments:
 
 The active environment is exposed to the client as `NEXT_PUBLIC_APP_ENV`.
 
+Health AI provider settings live in `.env.example` (select `deepseek` or `zhipu`).
+
 ### Local dev
 
 1. Copy `.env.example` to `.env.dev` (or `.env.dev.local`)

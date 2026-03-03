@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { createClient } from "@supabase/supabase-js";
 
-import { createHealthChatModels } from "@/lib/health/llm";
+import { createHealthChatModel } from "@/lib/health/llm";
 import {
   DEFAULT_HEALTH_GOAL,
   healthGoalToPrompt,
@@ -19,6 +19,17 @@ type MealPlan = {
   dinner: string | null;
   snacks: string | null;
   notes: string | null;
+  breakfast_recipe: MealRecipe | null;
+  lunch_recipe: MealRecipe | null;
+  dinner_recipe: MealRecipe | null;
+  snacks_recipe: MealRecipe | null;
+};
+
+type MealRecipe = {
+  name: string | null;
+  ingredients: string[];
+  steps: string[];
+  tips: string | null;
 };
 
 type WorkoutPlan = {
@@ -67,6 +78,31 @@ const normalizeText = (value: unknown) => {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+};
+
+const normalizeStringArray = (value: unknown) => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0);
+};
+
+const normalizeRecipe = (value: unknown): MealRecipe | null => {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const name = normalizeText(record.name);
+  const ingredients = normalizeStringArray(record.ingredients);
+  const steps = normalizeStringArray(record.steps);
+  const tips = normalizeText(record.tips);
+
+  if (!name && ingredients.length === 0 && steps.length === 0 && !tips) return null;
+
+  return {
+    name,
+    ingredients,
+    steps,
+    tips: tips ?? null,
+  };
 };
 
 const normalizeDuration = (value: unknown) => {
@@ -156,6 +192,10 @@ const parsePlans = (
       dinner: normalizeText(record.dinner),
       snacks: normalizeText(record.snacks),
       notes: normalizeText(record.notes),
+      breakfast_recipe: normalizeRecipe(record.breakfast_recipe),
+      lunch_recipe: normalizeRecipe(record.lunch_recipe),
+      dinner_recipe: normalizeRecipe(record.dinner_recipe),
+      snacks_recipe: normalizeRecipe(record.snacks_recipe),
     };
   });
 
@@ -245,8 +285,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const models = createHealthChatModels({ temperature: 0 });
-  if (!models) {
+  const llm = createHealthChatModel({ temperature: 0 });
+  if (!llm) {
     return NextResponse.json({ error: "Missing LLM configuration" }, { status: 500 });
   }
 
@@ -306,38 +346,21 @@ export async function POST(request: Request) {
     const systemPrompt =
       "你是健康计划助手。只返回 JSON，不要 markdown。所有字段值必须使用简体中文（不要英文）。";
     const { user_id: _, ...metricsForPrompt } = userRecord;
-    const userPrompt = `请生成一个简单的 7 天游饮食与训练计划。\n${healthGoalToPrompt(goal)}\n周起始日：${weekStart}\n时区：${timezone}\n日期：${days.join(", ")}\n用户指标：${JSON.stringify(metricsForPrompt)}\n\n只返回 JSON，根节点包含 keys：meals 和 workouts。\n- meals：长度为 7 的数组，每项包含 date, breakfast, lunch, dinner, snacks, notes。\n- workouts：长度为 7 的数组，每项包含 date, cardio, strength, duration_min, intensity, notes。\n\n要求：\n- 除 date 外，所有文本必须是简体中文；不要输出英文。\n- 文本尽量短、可执行（像真实菜单/训练安排）。\n- 休息日相关字段用 null。\n- duration_min 必须是整数或 null。`;
+    const userPrompt = `请生成一个简单的 7 天游饮食与训练计划。\n${healthGoalToPrompt(goal)}\n\n目标偏好：\n- 减脂：高蛋白、低油盐、控制精制糖，多用蒸煮/凉拌。\n- 增肌：蛋白充足 + 复合碳水，训练前后补充优质蛋白。\n- 均衡：三大营养比例均衡，蔬菜占比足够。\n\n制作要求：\n- 每餐做法简单，步骤 3-5 步内，食材易获得。\n\n周起始日：${weekStart}\n时区：${timezone}\n日期：${days.join(", ")}\n用户指标：${JSON.stringify(metricsForPrompt)}\n\n只返回 JSON，根节点包含 keys：meals 和 workouts。\n- meals：长度为 7 的数组，每项包含 date, breakfast, lunch, dinner, snacks, notes, breakfast_recipe, lunch_recipe, dinner_recipe, snacks_recipe。\n- *_recipe：对象包含 name, ingredients(数组), steps(数组), tips(可选)。\n- workouts：长度为 7 的数组，每项包含 date, cardio, strength, duration_min, intensity, notes。\n\n要求：\n- 除 date 外，所有文本必须是简体中文；不要输出英文。\n- 文本尽量短、可执行（像真实菜单/训练安排）。\n- 休息日相关字段用 null。\n- duration_min 必须是整数或 null。`;
 
     let responseContent: unknown;
     try {
-      const response = await models.primary.invoke([
+      const response = await llm.invoke([
         new SystemMessage(systemPrompt),
         new HumanMessage(userPrompt),
       ]);
       responseContent = response.content;
     } catch (error) {
-      if (models.fallback) {
-        try {
-          const response = await models.fallback.invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ]);
-          responseContent = response.content;
-        } catch (fallbackError) {
-          console.warn("Skipping user due to LLM failure", {
-            userId,
-            primary: error instanceof Error ? error.message : String(error),
-            fallback: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-          });
-          continue;
-        }
-      } else {
-        console.warn("Skipping user due to LLM failure", {
-          userId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        continue;
-      }
+      console.warn("Skipping user due to LLM failure", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      continue;
     }
 
     const content = normalizeContent(responseContent);
@@ -424,6 +447,10 @@ export async function POST(request: Request) {
       dinner: meal.dinner,
       snacks: meal.snacks,
       notes: meal.notes,
+      breakfast_recipe: meal.breakfast_recipe,
+      lunch_recipe: meal.lunch_recipe,
+      dinner_recipe: meal.dinner_recipe,
+      snacks_recipe: meal.snacks_recipe,
     }));
 
     const { error: mealDayError } = await supabase

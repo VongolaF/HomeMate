@@ -46,6 +46,17 @@ type MealDayPlanApi = {
   lunch?: string | null;
   dinner?: string | null;
   snacks?: string | null;
+  breakfast_recipe?: MealRecipe | null;
+  lunch_recipe?: MealRecipe | null;
+  dinner_recipe?: MealRecipe | null;
+  snacks_recipe?: MealRecipe | null;
+};
+
+type MealRecipe = {
+  name?: string | null;
+  ingredients?: string[] | null;
+  steps?: string[] | null;
+  tips?: string | null;
 };
 
 type WorkoutDayPlanApi = {
@@ -71,6 +82,12 @@ type HealthPlanResponse<T> = {
 };
 
 const weekdayLabels = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const mealSlotLabels: Record<MealSlot, string> = {
+  breakfast: "早餐",
+  lunch: "午餐",
+  dinner: "晚餐",
+  snacks: "加餐",
+};
 
 const makeChatMessageId = () => {
   if (typeof globalThis !== "undefined") {
@@ -140,6 +157,13 @@ const parseJson = async <T,>(response: Response): Promise<T | null> => {
   }
 };
 
+const buildHistoryPayload = (history: ChatMessage[]) =>
+  history
+    .filter((item) => item.status !== "loading" && item.status !== "error")
+    .map((item) => ({ role: item.role, content: item.content.trim() }))
+    .filter((item) => item.content.length > 0)
+    .slice(-12);
+
 export default function HealthPage() {
   const { token } = theme.useToken();
   const router = useRouter();
@@ -161,6 +185,7 @@ export default function HealthPage() {
   const [isSendingMeal, setIsSendingMeal] = useState(false);
   const [isSendingWorkout, setIsSendingWorkout] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
 
   const mealChatScrollRef = useRef<HTMLDivElement | null>(null);
   const workoutChatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -185,6 +210,13 @@ export default function HealthPage() {
     if (activeTab === "meals") scrollToBottom(mealChatScrollRef.current);
     else scrollToBottom(workoutChatScrollRef.current);
   }, [activeTab, isChatOpen, scrollToBottom]);
+
+  useEffect(() => {
+    if (!authExpired) return;
+    messageApi.warning("登录已过期，请重新登录");
+    router.push("/login");
+    setAuthExpired(false);
+  }, [authExpired, messageApi, router]);
 
   const loadHealthGoal = useCallback(async () => {
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -361,8 +393,7 @@ export default function HealthPage() {
     async (url: string, init?: RequestInit) => {
       const token = await getAccessToken();
       if (!token) {
-        messageApi.warning("登录已过期，请重新登录");
-        router.push("/login");
+        setAuthExpired(true);
         return null;
       }
 
@@ -377,8 +408,7 @@ export default function HealthPage() {
       const { data: refreshed } = await supabase.auth.refreshSession();
       const nextToken = refreshed.session?.access_token;
       if (!nextToken) {
-        messageApi.warning("登录已过期，请重新登录");
-        router.push("/login");
+        setAuthExpired(true);
         return response;
       }
 
@@ -389,12 +419,11 @@ export default function HealthPage() {
 
       const retryResponse = await fetch(url, { ...init, headers: retryHeaders });
       if (retryResponse.status === 401) {
-        messageApi.warning("登录已过期，请重新登录");
-        router.push("/login");
+        setAuthExpired(true);
       }
       return retryResponse;
     },
-    [getAccessToken, messageApi, router]
+    [getAccessToken, supabase]
   );
 
   const loadPlans = useCallback(async () => {
@@ -478,6 +507,7 @@ export default function HealthPage() {
         confirmProceed && pendingQuestion
           ? `继续（已确认跳过身体信息）。原问题：${pendingQuestion}`
           : trimmed;
+      const historyPayload = buildHistoryPayload(isMeals ? mealChatHistory : workoutChatHistory);
 
       const getExistingDayPlansCount = () => {
         if (view === "meals") {
@@ -615,6 +645,7 @@ export default function HealthPage() {
             timezone,
             context,
             goal: healthGoal,
+            history: historyPayload,
           }),
         });
 
@@ -651,6 +682,7 @@ export default function HealthPage() {
       loadPlans,
       healthGoal,
       mealChatInput,
+      mealChatHistory,
       mealDayPlans.length,
       prevMealDayPlans.length,
       pendingMealQuestion,
@@ -661,6 +693,7 @@ export default function HealthPage() {
       timezone,
       weekStart,
       workoutChatInput,
+      workoutChatHistory,
       workoutDayPlans.length,
       prevWorkoutDayPlans.length,
     ]
@@ -701,6 +734,49 @@ export default function HealthPage() {
   const activeChatInput = activeTab === "meals" ? mealChatInput : workoutChatInput;
   const activeChatScrollRef = activeTab === "meals" ? mealChatScrollRef : workoutChatScrollRef;
   const isSendingActive = activeTab === "meals" ? isSendingMeal : isSendingWorkout;
+
+  const selectedMealRecipe = useMemo(() => {
+    if (activeTab !== "meals") return null;
+    if (!selectedContext || selectedContext.view !== "meals") return null;
+    if (selectedContext.selectionType !== "slot" || !selectedContext.slotType) return null;
+
+    const sourcePlans =
+      selectedContext.weekStart === weekStart
+        ? mealDayPlans
+        : selectedContext.weekStart === prevWeekStart
+          ? prevMealDayPlans
+          : [];
+
+    const dayPlan = sourcePlans.find((plan) => plan.date === selectedContext.date);
+    if (!dayPlan) return null;
+
+    const slot = selectedContext.slotType as MealSlot;
+    const recipe =
+      slot === "breakfast"
+        ? dayPlan.breakfast_recipe
+        : slot === "lunch"
+          ? dayPlan.lunch_recipe
+          : slot === "dinner"
+            ? dayPlan.dinner_recipe
+            : dayPlan.snacks_recipe;
+
+    const mealText =
+      slot === "breakfast"
+        ? dayPlan.breakfast
+        : slot === "lunch"
+          ? dayPlan.lunch
+          : slot === "dinner"
+            ? dayPlan.dinner
+            : dayPlan.snacks;
+
+    return {
+      date: selectedContext.date,
+      slot,
+      label: mealSlotLabels[slot],
+      recipe,
+      mealText: mealText ?? null,
+    };
+  }, [activeTab, mealDayPlans, prevMealDayPlans, prevWeekStart, selectedContext, weekStart]);
 
   const selectedLabel = useMemo(() => {
     if (!selectedContext || selectedContext.view !== activeTab) {
@@ -884,59 +960,62 @@ export default function HealthPage() {
         </div>
 
         {activeTab === "meals" ? (
-          <Row gutter={[16, 16]} align="top">
-            <Col xs={24} lg={12} style={{ display: "flex" }}>
-              <Card
-                title="上周饮食计划"
-                loading={isLoadingPlans}
-                styles={{ body: { paddingTop: 12 } }}
-                style={{ width: "100%" }}
-              >
-                <MealWeekTable
-                  data={prevMealData}
-                  selected={
-                    selectedContext?.view === "meals" && selectedContext.weekStart === prevWeekStart
-                      ? {
-                          date: selectedContext.date,
-                          selectionType: selectedContext.selectionType,
-                          slotType:
-                            selectedContext.selectionType === "slot"
-                              ? (selectedContext.slotType as MealSlot)
-                              : undefined,
-                        }
-                      : null
-                  }
-                  onSelect={(selection) => updateSelection("meals", prevWeekStart, selection)}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} lg={12} style={{ display: "flex" }}>
-              <Card
-                title="本周饮食计划"
-                loading={isLoadingPlans}
-                styles={{ body: { paddingTop: 12 } }}
-                style={{ width: "100%" }}
-              >
-                <MealWeekTable
-                  data={mealData}
-                  highlightDate={todayIso}
-                  selected={
-                    selectedContext?.view === "meals" && selectedContext.weekStart === weekStart
-                      ? {
-                          date: selectedContext.date,
-                          selectionType: selectedContext.selectionType,
-                          slotType:
-                            selectedContext.selectionType === "slot"
-                              ? (selectedContext.slotType as MealSlot)
-                              : undefined,
-                        }
-                      : null
-                  }
-                  onSelect={(selection) => updateSelection("meals", weekStart, selection)}
-                />
-              </Card>
-            </Col>
-          </Row>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Row gutter={[16, 16]} align="top">
+              <Col xs={24} lg={12} style={{ display: "flex" }}>
+                <Card
+                  title="上周饮食计划"
+                  loading={isLoadingPlans}
+                  styles={{ body: { paddingTop: 12 } }}
+                  style={{ width: "100%" }}
+                >
+                  <MealWeekTable
+                    data={prevMealData}
+                    selected={
+                      selectedContext?.view === "meals" && selectedContext.weekStart === prevWeekStart
+                        ? {
+                            date: selectedContext.date,
+                            selectionType: selectedContext.selectionType,
+                            slotType:
+                              selectedContext.selectionType === "slot"
+                                ? (selectedContext.slotType as MealSlot)
+                                : undefined,
+                          }
+                        : null
+                    }
+                    onSelect={(selection) => updateSelection("meals", prevWeekStart, selection)}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} lg={12} style={{ display: "flex" }}>
+                <Card
+                  title="本周饮食计划"
+                  loading={isLoadingPlans}
+                  styles={{ body: { paddingTop: 12 } }}
+                  style={{ width: "100%" }}
+                >
+                  <MealWeekTable
+                    data={mealData}
+                    highlightDate={todayIso}
+                    selected={
+                      selectedContext?.view === "meals" && selectedContext.weekStart === weekStart
+                        ? {
+                            date: selectedContext.date,
+                            selectionType: selectedContext.selectionType,
+                            slotType:
+                              selectedContext.selectionType === "slot"
+                                ? (selectedContext.slotType as MealSlot)
+                                : undefined,
+                          }
+                        : null
+                    }
+                    onSelect={(selection) => updateSelection("meals", weekStart, selection)}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+          </div>
         ) : (
           <Row gutter={[16, 16]} align="top">
             <Col xs={24} lg={12} style={{ display: "flex" }}>
@@ -995,6 +1074,64 @@ export default function HealthPage() {
           </Row>
         )}
       </Card>
+
+      {selectedMealRecipe ? (
+        <Card
+          size="small"
+          title={`${selectedMealRecipe.date} · ${selectedMealRecipe.label}食谱`}
+          extra={
+            <Button size="small" onClick={() => setSelectedContext(null)}>
+              收起
+            </Button>
+          }
+          style={{ width: "100%" }}
+        >
+          {selectedMealRecipe.recipe ? (
+            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              <Typography.Text strong>
+                {selectedMealRecipe.recipe.name || selectedMealRecipe.mealText || "未命名"}
+              </Typography.Text>
+
+              <div>
+                <Typography.Text type="secondary">食材</Typography.Text>
+                <ul style={{ margin: "6px 0 0 16px" }}>
+                  {(selectedMealRecipe.recipe.ingredients ?? []).length ? (
+                    (selectedMealRecipe.recipe.ingredients ?? []).map((item, idx) => (
+                      <li key={`${item}-${idx}`}>{item}</li>
+                    ))
+                  ) : (
+                    <li>暂无食材信息</li>
+                  )}
+                </ul>
+              </div>
+
+              <div>
+                <Typography.Text type="secondary">步骤</Typography.Text>
+                <ol style={{ margin: "6px 0 0 16px" }}>
+                  {(selectedMealRecipe.recipe.steps ?? []).length ? (
+                    (selectedMealRecipe.recipe.steps ?? []).map((step, idx) => (
+                      <li key={`${step}-${idx}`}>{step}</li>
+                    ))
+                  ) : (
+                    <li>暂无制作步骤</li>
+                  )}
+                </ol>
+              </div>
+
+              {selectedMealRecipe.recipe.tips ? (
+                <div>
+                  <Typography.Text type="secondary">小贴士</Typography.Text>
+                  <Typography.Paragraph style={{ margin: "6px 0 0" }}>
+                    {selectedMealRecipe.recipe.tips}
+                  </Typography.Paragraph>
+                </div>
+              ) : null}
+            </Space>
+          ) : (
+            <Typography.Text type="secondary">该餐暂无食谱，建议重新生成。</Typography.Text>
+          )}
+        </Card>
+      ) : null}
     </div>
   );
 }

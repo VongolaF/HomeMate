@@ -1,6 +1,8 @@
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { DynamicTool } from "@langchain/core/tools";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createHealthChatModel } from "@/lib/health/llm";
 import {
   DEFAULT_HEALTH_GOAL,
   healthGoalToPrompt,
@@ -46,6 +48,14 @@ type WeekPlanReadInput = {
   weekStart?: unknown;
 };
 
+type RegenerateWeekPlanInput = {
+  weekStart?: unknown;
+  timezone?: unknown;
+  goal?: unknown;
+  view?: unknown;
+  allowMissingBodyMetrics?: unknown;
+};
+
 type SuggestMealIdeasInput = {
   weekStart?: unknown;
   date?: unknown;
@@ -85,6 +95,23 @@ const parseIsoDate = (value: string) => {
   return date;
 };
 
+const isValidTimezone = (value: string) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const buildWeekDays = (weekStart: Date) => {
+  const startMs = weekStart.getTime();
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(startMs + index * 86400000);
+    return date.toISOString().slice(0, 10);
+  });
+};
+
 const isDateInWeek = (dateValue: string, weekStartValue: string) => {
   const date = parseIsoDate(dateValue);
   const weekStart = parseIsoDate(weekStartValue);
@@ -101,6 +128,19 @@ const normalizeText = (value: unknown) => {
   return trimmed ? trimmed : null;
 };
 
+const normalizeModelText = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const normalizeStringArray = (value: unknown) => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0);
+};
+
 const normalizeDuration = (value: unknown) => {
   if (value === null) return null;
   if (typeof value === "number") {
@@ -111,6 +151,145 @@ const normalizeDuration = (value: unknown) => {
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+};
+
+type MealRecipe = {
+  name: string | null;
+  ingredients: string[];
+  steps: string[];
+  tips: string | null;
+};
+
+type MealPlan = {
+  date: string;
+  breakfast: string | null;
+  lunch: string | null;
+  dinner: string | null;
+  snacks: string | null;
+  notes: string | null;
+  breakfast_recipe: MealRecipe | null;
+  lunch_recipe: MealRecipe | null;
+  dinner_recipe: MealRecipe | null;
+  snacks_recipe: MealRecipe | null;
+};
+
+type WorkoutPlan = {
+  date: string;
+  cardio: string | null;
+  strength: string | null;
+  duration_min: number | null;
+  intensity: string | null;
+  notes: string | null;
+};
+
+const normalizeRecipe = (value: unknown): MealRecipe | null => {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const name = normalizeModelText(record.name);
+  const ingredients = normalizeStringArray(record.ingredients);
+  const steps = normalizeStringArray(record.steps);
+  const tips = normalizeModelText(record.tips);
+
+  if (!name && ingredients.length === 0 && steps.length === 0 && !tips) return null;
+
+  return {
+    name,
+    ingredients,
+    steps,
+    tips: tips ?? null,
+  };
+};
+
+const normalizeContent = (content: unknown) => {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const combined = content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && "text" in part) {
+          return String((part as { text?: unknown }).text ?? "");
+        }
+        return "";
+      })
+      .join("");
+    return combined || null;
+  }
+  if (content && typeof content === "object" && "text" in content) {
+    return String((content as { text?: unknown }).text ?? "");
+  }
+  return null;
+};
+
+const parsePlans = (
+  rawContent: string,
+  days: string[]
+): { meals: MealPlan[]; workouts: WorkoutPlan[] } | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch {
+    const start = rawContent.indexOf("{");
+    const end = rawContent.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+      parsed = JSON.parse(rawContent.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const mealItems = Array.isArray((parsed as { meals?: unknown }).meals)
+    ? ((parsed as { meals: unknown[] }).meals ?? [])
+    : [];
+  const workoutItems = Array.isArray((parsed as { workouts?: unknown }).workouts)
+    ? ((parsed as { workouts: unknown[] }).workouts ?? [])
+    : [];
+
+  const mealMap = new Map<string, Record<string, unknown>>();
+  for (const item of mealItems) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record.date === "string") mealMap.set(record.date, record);
+  }
+
+  const workoutMap = new Map<string, Record<string, unknown>>();
+  for (const item of workoutItems) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record.date === "string") workoutMap.set(record.date, record);
+  }
+
+  const meals = days.map((date) => {
+    const record = mealMap.get(date) ?? {};
+    return {
+      date,
+      breakfast: normalizeModelText(record.breakfast),
+      lunch: normalizeModelText(record.lunch),
+      dinner: normalizeModelText(record.dinner),
+      snacks: normalizeModelText(record.snacks),
+      notes: normalizeModelText(record.notes),
+      breakfast_recipe: normalizeRecipe(record.breakfast_recipe),
+      lunch_recipe: normalizeRecipe(record.lunch_recipe),
+      dinner_recipe: normalizeRecipe(record.dinner_recipe),
+      snacks_recipe: normalizeRecipe(record.snacks_recipe),
+    };
+  });
+
+  const workouts = days.map((date) => {
+    const record = workoutMap.get(date) ?? {};
+    return {
+      date,
+      cardio: normalizeModelText(record.cardio),
+      strength: normalizeModelText(record.strength),
+      duration_min: normalizeDuration(record.duration_min),
+      intensity: normalizeModelText(record.intensity),
+      notes: normalizeModelText(record.notes),
+    };
+  });
+
+  return { meals, workouts };
 };
 
 const parseJsonInput = (input: string) => {
@@ -131,6 +310,12 @@ const parseSuggestMealIdeasInput = (input: string) => {
   if (!input || !input.trim()) return {} as SuggestMealIdeasInput;
   const parsed = parseJsonInput(input) as SuggestMealIdeasInput | null;
   return parsed ?? ({} as SuggestMealIdeasInput);
+};
+
+const parseRegenerateWeekPlanInput = (input: string) => {
+  if (!input || !input.trim()) return {} as RegenerateWeekPlanInput;
+  const parsed = parseJsonInput(input) as RegenerateWeekPlanInput | null;
+  return parsed ?? ({} as RegenerateWeekPlanInput);
 };
 
 const loadWeekPlanId = async (
@@ -159,6 +344,12 @@ const validateWeekStart = (value: unknown, context: AgentToolContext) => {
 const validateDate = (value: unknown, weekStart: string) => {
   if (typeof value !== "string" || !parseIsoDate(value)) return null;
   if (!isDateInWeek(value, weekStart)) return null;
+  return value;
+};
+
+const validateTimezone = (value: unknown, context: AgentToolContext) => {
+  if (value === undefined) return context.timezone;
+  if (typeof value !== "string" || !isValidTimezone(value)) return null;
   return value;
 };
 
@@ -196,6 +387,11 @@ const buildWorkoutUpdates = (payload: WorkoutDayUpdateInput) => {
     }
   }
   return Object.keys(updates).length > 0 ? updates : null;
+};
+
+const normalizeView = (value: unknown) => {
+  if (value === "meals" || value === "workouts") return value;
+  return null;
 };
 
 const MEAL_SLOTS = ["breakfast", "lunch", "dinner", "snacks"] as const;
@@ -443,7 +639,9 @@ const readMealWeek = async (input: string, context: AgentToolContext) => {
 
   const { data, error } = await context.supabase
     .from("meal_day_plans")
-    .select("date, breakfast, lunch, dinner, snacks, notes")
+    .select(
+      "date, breakfast, lunch, dinner, snacks, notes, breakfast_recipe, lunch_recipe, dinner_recipe, snacks_recipe"
+    )
     .eq("week_plan_id", weekPlanId)
     .order("date", { ascending: true });
 
@@ -471,6 +669,192 @@ const readWorkoutWeek = async (input: string, context: AgentToolContext) => {
   return JSON.stringify({ weekStart, dayPlans: data ?? [] });
 };
 
+const regenerateWeekPlan = async (input: string, context: AgentToolContext) => {
+  const payload = parseRegenerateWeekPlanInput(input);
+
+  const weekStart = validateWeekStart(payload.weekStart, context);
+  if (!weekStart) return "Invalid weekStart.";
+
+  const timezone = validateTimezone(payload.timezone, context);
+  if (!timezone) return "Invalid timezone.";
+
+  const view = normalizeView(payload.view);
+  if (!view) return "Invalid view.";
+
+  const requestedGoal = normalizeHealthGoal(payload.goal);
+  let savedGoal = DEFAULT_HEALTH_GOAL;
+  if (!requestedGoal) {
+    const { data: profileRow } = await context.supabase
+      .from("profiles")
+      .select("health_goal")
+      .eq("id", context.userId)
+      .maybeSingle();
+    const normalized = normalizeHealthGoal(
+      (profileRow as { health_goal?: unknown } | null)?.health_goal
+    );
+    if (normalized) savedGoal = normalized;
+  }
+  const effectiveGoal = requestedGoal ?? savedGoal;
+
+  const allowMissingBodyMetrics = payload.allowMissingBodyMetrics === true;
+
+  const { data: metricsRow, error: metricsError } = await context.supabase
+    .from("body_metrics")
+    .select(
+      "user_id,height_cm,weight_kg,gender,birthday,age,body_fat_pct,muscle_pct,subcutaneous_fat,visceral_fat,bmi,water_pct,protein_pct,bone_mass,bmr"
+    )
+    .eq("user_id", context.userId)
+    .maybeSingle();
+
+  if (metricsError) {
+    return "Failed to load body metrics.";
+  }
+
+  const metricsRecord = (metricsRow ?? null) as Record<string, unknown> | null;
+  const hasBodyMetrics = Boolean(
+    metricsRecord &&
+      (
+        metricsRecord.height_cm ||
+        metricsRecord.weight_kg ||
+        metricsRecord.gender ||
+        metricsRecord.birthday ||
+        metricsRecord.age ||
+        metricsRecord.body_fat_pct ||
+        metricsRecord.muscle_pct ||
+        metricsRecord.subcutaneous_fat ||
+        metricsRecord.visceral_fat ||
+        metricsRecord.bmi ||
+        metricsRecord.water_pct ||
+        metricsRecord.protein_pct ||
+        metricsRecord.bone_mass ||
+        metricsRecord.bmr
+      )
+  );
+
+  if (!hasBodyMetrics && !allowMissingBodyMetrics) {
+    return "检测到你还没有填写身体信息（如身高/体重等），计划会更偏通用。你可以先去个人中心填写：/profile#body。\n\n如果你不想填写，也可以继续生成：请在对话中回复“继续”或“跳过”。";
+  }
+
+  const llm = createHealthChatModel({ temperature: 0 });
+  if (!llm) return "Missing LLM configuration.";
+
+  const weekStartDate = parseIsoDate(weekStart);
+  if (!weekStartDate) return "Invalid weekStart.";
+
+  const days = buildWeekDays(weekStartDate);
+  const { user_id: userIdForPrompt, ...metricsForPrompt } = (metricsRecord ?? {}) as Record<
+    string,
+    unknown
+  >;
+  void userIdForPrompt;
+
+  const systemPrompt = "你是健康计划助手。只返回 JSON，不要 markdown。所有字段值必须使用简体中文（不要英文）。";
+
+  const basePrompt = `请生成一个简单的 7 天游饮食与训练计划。\n${healthGoalToPrompt(
+    effectiveGoal
+  )}\n\n目标偏好：\n- 减脂：高蛋白、低油盐、控制精制糖，多用蒸煮/凉拌。\n- 增肌：蛋白充足 + 复合碳水，训练前后补充优质蛋白。\n- 均衡：三大营养比例均衡，蔬菜占比足够。\n\n制作要求：\n- 每餐做法简单，步骤 3-5 步内，食材易获得。\n\n周起始日：${weekStart}\n时区：${timezone}\n日期：${days.join(", ")}\n用户指标：${JSON.stringify(
+    metricsForPrompt
+  )}`;
+
+  const viewPrompt =
+    view === "meals"
+      ? "\n\n只返回 JSON，根节点包含 key：meals。\n- meals：长度为 7 的数组，每项包含 date, breakfast, lunch, dinner, snacks, notes, breakfast_recipe, lunch_recipe, dinner_recipe, snacks_recipe。\n- *_recipe：对象包含 name, ingredients(数组), steps(数组), tips(可选)。\n\n要求：\n- 除 date 外，所有文本必须是简体中文；不要输出英文。\n- 文本尽量短、可执行（像真实菜单）。\n- 休息日相关字段用 null。"
+      : "\n\n只返回 JSON，根节点包含 key：workouts。\n- workouts：长度为 7 的数组，每项包含 date, cardio, strength, duration_min, intensity, notes。\n\n要求：\n- 除 date 外，所有文本必须是简体中文；不要输出英文。\n- 文本尽量短、可执行（像真实训练安排）。\n- 休息日相关字段用 null。\n- duration_min 必须是整数或 null。";
+
+  let responseContent: unknown;
+  try {
+    const response = await llm.invoke([
+      new SystemMessage(systemPrompt),
+      new HumanMessage(`${basePrompt}${viewPrompt}`),
+    ]);
+    responseContent = response.content;
+  } catch {
+    return "LLM request failed.";
+  }
+
+  const content = normalizeContent(responseContent);
+  if (!content) return "Empty LLM response.";
+
+  const parsedPlans = parsePlans(content, days);
+  if (!parsedPlans) return "Invalid LLM response.";
+
+  if (view === "meals") {
+    const { data: mealWeek, error: mealWeekError } = await context.supabase
+      .from("meal_week_plans")
+      .upsert(
+        {
+          user_id: context.userId,
+          week_start_date: weekStart,
+          timezone,
+          generated_by: "user",
+        },
+        { onConflict: "user_id,week_start_date" }
+      )
+      .select("id")
+      .single();
+
+    if (mealWeekError || !mealWeek) {
+      return "Failed to upsert meal week plan.";
+    }
+
+    const mealDayRows = parsedPlans.meals.map((meal) => ({
+      week_plan_id: mealWeek.id,
+      date: meal.date,
+      breakfast: meal.breakfast,
+      lunch: meal.lunch,
+      dinner: meal.dinner,
+      snacks: meal.snacks,
+      notes: meal.notes,
+      breakfast_recipe: meal.breakfast_recipe,
+      lunch_recipe: meal.lunch_recipe,
+      dinner_recipe: meal.dinner_recipe,
+      snacks_recipe: meal.snacks_recipe,
+    }));
+
+    const { error: mealDayError } = await context.supabase
+      .from("meal_day_plans")
+      .upsert(mealDayRows, { onConflict: "week_plan_id,date" });
+
+    if (mealDayError) return "Failed to upsert meal day plans.";
+    return "已重新生成本周饮食计划。";
+  }
+
+  const { data: workoutWeek, error: workoutWeekError } = await context.supabase
+    .from("workout_week_plans")
+    .upsert(
+      {
+        user_id: context.userId,
+        week_start_date: weekStart,
+        timezone,
+        generated_by: "user",
+      },
+      { onConflict: "user_id,week_start_date" }
+    )
+    .select("id")
+    .single();
+
+  if (workoutWeekError || !workoutWeek) {
+    return "Failed to upsert workout week plan.";
+  }
+
+  const workoutDayRows = parsedPlans.workouts.map((workout) => ({
+    week_plan_id: workoutWeek.id,
+    date: workout.date,
+    cardio: workout.cardio,
+    strength: workout.strength,
+    duration_min: workout.duration_min,
+    intensity: workout.intensity,
+    notes: workout.notes,
+  }));
+
+  const { error: workoutDayError } = await context.supabase
+    .from("workout_day_plans")
+    .upsert(workoutDayRows, { onConflict: "week_plan_id,date" });
+
+  if (workoutDayError) return "Failed to upsert workout day plans.";
+  return "已重新生成本周训练计划。";
+};
+
 export const buildHealthAgentTools = (context: AgentToolContext) => [
   new DynamicTool({
     name: "get_meal_week_plan",
@@ -489,6 +873,12 @@ export const buildHealthAgentTools = (context: AgentToolContext) => [
     description:
       "Read the current user's workout week plan for this weekStart. Input JSON optional: { weekStart }. Returns JSON string.",
     func: (input) => readWorkoutWeek(input, context),
+  }),
+  new DynamicTool({
+    name: "regenerate_week_plan",
+    description:
+      "Regenerate the current week plan for the active view. Input JSON: { weekStart, timezone, view: 'meals'|'workouts', goal?, allowMissingBodyMetrics? }",
+    func: (input) => regenerateWeekPlan(input, context),
   }),
   new DynamicTool({
     name: "update_meal_item",

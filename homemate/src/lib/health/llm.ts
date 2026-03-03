@@ -1,98 +1,71 @@
-import { ChatOpenAICompatible } from "./chatModels/ChatOpenAICompatible";
-import { ChatZhipuAI } from "./chatModels/ChatZhipuAI";
+import { ChatDeepSeek } from "@langchain/deepseek";
+import { ChatZhipuAIToolCompatible } from "./chatModels/ChatZhipuAIToolCompatible";
+
+type HealthLlmProvider = "zhipu" | "deepseek";
 
 type HealthLlmConfig = {
-  provider: "zhipu" | "openai_compatible";
+  provider: HealthLlmProvider;
   apiKey: string;
   model: string;
-  baseURL: string;
+  baseURL?: string;
 };
 
-const ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
 const ZHIPU_DEFAULT_MODEL = "glm-4.7";
+const DEEPSEEK_DEFAULT_MODEL = "deepseek-chat";
 
-type HealthChatModels = {
-  primary: ChatOpenAICompatible;
-  fallback: ChatOpenAICompatible | null;
-  provider: HealthLlmConfig["provider"];
+const getHealthProvider = (): HealthLlmProvider => {
+  const provider = process.env.HEALTH_LLM_PROVIDER?.trim().toLowerCase();
+  return provider === "deepseek" ? "deepseek" : "zhipu";
 };
 
 const getZhipuConfig = (): HealthLlmConfig | null => {
   const zhipuKey = process.env.ZHIPUAI_API_KEY?.trim();
   if (!zhipuKey) return null;
-  const baseURL = (process.env.ZHIPUAI_API_BASE?.trim() || ZHIPU_DEFAULT_BASE_URL).replace(
-    /\/+$/,
-    ""
-  );
+  const baseURL = process.env.ZHIPUAI_API_BASE?.trim();
   const model = process.env.ZHIPUAI_MODEL?.trim() || ZHIPU_DEFAULT_MODEL;
   return {
     provider: "zhipu",
     apiKey: zhipuKey,
     model,
-    baseURL,
+    baseURL: baseURL?.replace(/\/+$/, ""),
   };
 };
 
-const getOpenAICompatibleConfig = (): HealthLlmConfig | null => {
-  const apiKey = process.env.HEALTH_LLM_API_KEY?.trim();
-  const model = process.env.HEALTH_LLM_MODEL?.trim();
-  const baseURL = process.env.HEALTH_LLM_API_BASE?.trim();
-
-  if (!apiKey || !model || !baseURL) return null;
-
+const getDeepSeekConfig = (): HealthLlmConfig | null => {
+  const deepSeekKey = process.env.DEEPSEEK_API_KEY?.trim();
+  if (!deepSeekKey) return null;
+  const baseURL = process.env.DEEPSEEK_BASE_URL?.trim();
+  const model = process.env.HEALTH_LLM_MODEL?.trim() || DEEPSEEK_DEFAULT_MODEL;
   return {
-    provider: "openai_compatible",
-    apiKey,
+    provider: "deepseek",
+    apiKey: deepSeekKey,
     model,
-    baseURL: baseURL.replace(/\/+$/, ""),
+    baseURL: baseURL?.replace(/\/+$/, ""),
   };
 };
 
 export const getHealthLlmConfig = (): HealthLlmConfig | null => {
-  return getZhipuConfig() ?? getOpenAICompatibleConfig();
-};
-
-export const createHealthChatModels = (options: { temperature: number }): HealthChatModels | null => {
-  const zhipu = getZhipuConfig();
-  const openAiCompat = getOpenAICompatibleConfig();
-
-  if (zhipu) {
-    return {
-      provider: "zhipu",
-      primary: new ChatZhipuAI({
-        apiKey: zhipu.apiKey,
-        model: zhipu.model,
-        baseURL: zhipu.baseURL,
-        temperature: options.temperature,
-      }),
-      fallback: openAiCompat
-        ? new ChatOpenAICompatible({
-            apiKey: openAiCompat.apiKey,
-            model: openAiCompat.model,
-            baseURL: openAiCompat.baseURL,
-            temperature: options.temperature,
-          })
-        : null,
-    };
-  }
-
-  if (openAiCompat) {
-    return {
-      provider: "openai_compatible",
-      primary: new ChatOpenAICompatible({
-        apiKey: openAiCompat.apiKey,
-        model: openAiCompat.model,
-        baseURL: openAiCompat.baseURL,
-        temperature: options.temperature,
-      }),
-      fallback: null,
-    };
-  }
-
-  return null;
+  const provider = getHealthProvider();
+  return provider === "deepseek" ? getDeepSeekConfig() : getZhipuConfig();
 };
 
 export const createHealthChatModel = (options: { temperature: number }) => {
-  const models = createHealthChatModels(options);
-  return models?.primary ?? null;
+  const config = getHealthLlmConfig();
+  if (!config) return null;
+
+  if (config.provider === "deepseek") {
+    return new ChatDeepSeek({
+      apiKey: config.apiKey,
+      model: config.model,
+      temperature: options.temperature,
+      ...(config.baseURL ? { configuration: { baseURL: config.baseURL } } : {}),
+    });
+  }
+
+  return new ChatZhipuAIToolCompatible({
+    apiKey: config.apiKey,
+    model: config.model,
+    temperature: options.temperature,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+  });
 };
