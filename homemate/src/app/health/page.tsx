@@ -844,10 +844,8 @@ export default function HealthPage() {
                     onClick={() => {
                       if (activeTab === "meals") {
                         setMealChatHistory([]);
-                        setPendingMealQuestion(null);
                       } else {
                         setWorkoutChatHistory([]);
-                        setPendingWorkoutQuestion(null);
                       }
                     }}
                   >
