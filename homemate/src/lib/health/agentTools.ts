@@ -146,7 +146,7 @@ const normalizeDuration = (value: unknown) => {
   if (typeof value === "number") {
     return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
   }
-  if (typeof value !== "string") return value;
+  if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parsed = Number(trimmed);
