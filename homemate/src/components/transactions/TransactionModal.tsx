@@ -1,9 +1,7 @@
 "use client";
 
-import type { Dayjs } from "dayjs";
-import { useEffect } from "react";
 import dayjs from "dayjs";
-import { Button, DatePicker, Form, Input, InputNumber, Modal, Select, Segmented } from "antd";
+import { useEffect, useMemo, useState } from "react";
 import type { Transaction, UserCategory } from "@/types/transactions";
 
 export interface TransactionFormValues {
@@ -24,14 +22,28 @@ interface TransactionModalProps {
   initialValues?: Transaction;
 }
 
-interface FormValues {
+interface LocalForm {
   type: "income" | "expense";
-  amount: number;
+  amount: string;
   currency: string;
-  occurred_at: Dayjs;
-  category_id?: string | null;
-  note?: string;
-  tags?: string[];
+  occurred_at: string;
+  category_id: string;
+  note: string;
+  tags: string;
+}
+
+function toLocalForm(initialValues?: Transaction): LocalForm {
+  return {
+    type: initialValues?.type ?? "expense",
+    amount: String(initialValues?.amount ?? ""),
+    currency: initialValues?.currency ?? "CNY",
+    occurred_at: initialValues?.occurred_at
+      ? dayjs(initialValues.occurred_at).format("YYYY-MM-DD")
+      : dayjs().format("YYYY-MM-DD"),
+    category_id: initialValues?.category_id ?? "",
+    note: initialValues?.note ?? "",
+    tags: Array.isArray(initialValues?.tags) ? initialValues?.tags.join(",") : "",
+  };
 }
 
 export default function TransactionModal({
@@ -41,91 +53,169 @@ export default function TransactionModal({
   categories,
   initialValues,
 }: TransactionModalProps) {
-  const [form] = Form.useForm<FormValues>();
+  const [form, setForm] = useState<LocalForm>(toLocalForm(initialValues));
+  const [errorText, setErrorText] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setForm(toLocalForm(initialValues));
+    setErrorText(null);
+  }, [open, initialValues]);
 
-    form.setFieldsValue({
-      type: initialValues?.type ?? "expense",
-      amount: initialValues?.amount ?? 0,
-      currency: initialValues?.currency ?? "CNY",
-      occurred_at: initialValues?.occurred_at ? dayjs(initialValues.occurred_at) : dayjs(),
-      category_id: initialValues?.category_id ?? undefined,
-      note: initialValues?.note ?? "",
-      tags: initialValues?.tags ?? [],
-    });
-  }, [form, initialValues, open]);
+  const filteredCategories = useMemo(
+    () => categories.filter((category) => category.type === form.type),
+    [categories, form.type]
+  );
 
-  const handleOk = async () => {
-    const values = await form.validateFields();
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!form.amount || Number(form.amount) <= 0) {
+      setErrorText("请输入有效金额");
+      return;
+    }
+    if (!form.currency.trim()) {
+      setErrorText("请选择币种");
+      return;
+    }
+    if (!form.occurred_at.trim()) {
+      setErrorText("请选择日期");
+      return;
+    }
+
     onSubmit({
-      ...values,
-      occurred_at: values.occurred_at.format("YYYY-MM-DD"),
+      type: form.type,
+      amount: Number(form.amount),
+      currency: form.currency,
+      occurred_at: form.occurred_at,
+      category_id: form.category_id || null,
+      note: form.note.trim() || "",
+      tags: form.tags
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
     });
   };
 
-  const typeValue = Form.useWatch("type", form) ?? initialValues?.type ?? "expense";
-  const filteredCategories = categories.filter((category) => category.type === typeValue);
+  if (!open) return null;
 
   return (
-    <Modal
-      title={initialValues ? "编辑记账" : "新增记账"}
-      open={open}
-      onCancel={onClose}
-      footer={[
-        <Button key="cancel" onClick={onClose}>
-          取消
-        </Button>,
-        <Button key="submit" type="primary" onClick={handleOk}>
-          保存
-        </Button>,
-      ]}
-    >
-      <Form
-        form={form}
-        layout="vertical"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+      <form
+        className="w-full max-w-lg rounded-2xl border border-line bg-surface p-5 shadow-soft"
+        onSubmit={handleSubmit}
       >
-        <Form.Item label="类型" name="type" rules={[{ required: true }]}>
-          <Segmented
-            options={[
-              { label: "支出", value: "expense" },
-              { label: "收入", value: "income" },
-            ]}
-          />
-        </Form.Item>
-        <Form.Item label="金额" name="amount" rules={[{ required: true, type: "number", min: 0.01 }]}>
-          <InputNumber min={0.01} style={{ width: "100%" }} />
-        </Form.Item>
-        <Form.Item label="币种" name="currency" rules={[{ required: true }]}>
-          <Select
-            options={[
-              { value: "CNY", label: "CNY" },
-              { value: "USD", label: "USD" },
-              { value: "EUR", label: "EUR" },
-            ]}
-          />
-        </Form.Item>
-        <Form.Item label="日期" name="occurred_at" rules={[{ required: true }]}>
-          <DatePicker style={{ width: "100%" }} />
-        </Form.Item>
-        <Form.Item label="分类" name="category_id">
-          <Select
-            allowClear
-            placeholder="选择分类"
-            options={filteredCategories.map((category) => ({
-              value: category.id,
-              label: category.name,
-            }))}
-          />
-        </Form.Item>
-        <Form.Item label="标签" name="tags">
-          <Select mode="tags" placeholder="输入标签" />
-        </Form.Item>
-        <Form.Item label="备注" name="note">
-          <Input.TextArea rows={3} />
-        </Form.Item>
-      </Form>
-    </Modal>
+        <h3 className="mb-3 text-lg font-semibold text-ink">
+          {initialValues ? "修改这笔记录" : "记一笔收支"}
+        </h3>
+
+        {errorText ? (
+          <p className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {errorText}
+          </p>
+        ) : null}
+
+        <div className="grid gap-3">
+          <label className="grid gap-1 text-sm text-ink">
+            <span className="text-muted">类型</span>
+            <select
+              value={form.type}
+              onChange={(event) => setForm((prev) => ({ ...prev, type: event.target.value as "income" | "expense" }))}
+              className="rounded-xl border border-line px-3 py-2 outline-none focus:border-primary"
+            >
+              <option value="expense">支出</option>
+              <option value="income">收入</option>
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-sm text-ink">
+            <span className="text-muted">金额</span>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={form.amount}
+              onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
+              className="rounded-xl border border-line px-3 py-2 outline-none focus:border-primary"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm text-ink">
+            <span className="text-muted">币种</span>
+            <select
+              value={form.currency}
+              onChange={(event) => setForm((prev) => ({ ...prev, currency: event.target.value }))}
+              className="rounded-xl border border-line px-3 py-2 outline-none focus:border-primary"
+            >
+              <option value="CNY">CNY</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-sm text-ink">
+            <span className="text-muted">日期</span>
+            <input
+              type="date"
+              value={form.occurred_at}
+              onChange={(event) => setForm((prev) => ({ ...prev, occurred_at: event.target.value }))}
+              className="rounded-xl border border-line px-3 py-2 outline-none focus:border-primary"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm text-ink">
+            <span className="text-muted">分类</span>
+            <select
+              value={form.category_id}
+              onChange={(event) => setForm((prev) => ({ ...prev, category_id: event.target.value }))}
+              className="rounded-xl border border-line px-3 py-2 outline-none focus:border-primary"
+            >
+              <option value="">未分类</option>
+              {filteredCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-sm text-ink">
+            <span className="text-muted">标签（逗号分隔）</span>
+            <input
+              type="text"
+              value={form.tags}
+              onChange={(event) => setForm((prev) => ({ ...prev, tags: event.target.value }))}
+              className="rounded-xl border border-line px-3 py-2 outline-none focus:border-primary"
+              placeholder="如：通勤, 三餐"
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm text-ink">
+            <span className="text-muted">备注</span>
+            <textarea
+              rows={3}
+              value={form.note}
+              onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
+              className="rounded-xl border border-line px-3 py-2 outline-none focus:border-primary"
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink"
+          >
+            先不填
+          </button>
+          <button type="submit" className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-white">
+            保存一下
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

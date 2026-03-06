@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, Progress, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
@@ -32,12 +31,8 @@ function GoalBlock({ label, goal }: { label: string; goal: SavingsGoalRow | null
   if (!goal) {
     return (
       <div>
-        <Typography.Text type="secondary" style={{ fontSize: 16 }}>
-          {label}
-        </Typography.Text>
-        <Typography.Text style={{ display: "block", marginTop: 4, fontSize: 15 }}>
-          暂无
-        </Typography.Text>
+        <p className="text-sm text-muted">{label}</p>
+        <p className="mt-1 text-sm text-ink">暂无</p>
       </div>
     );
   }
@@ -48,16 +43,15 @@ function GoalBlock({ label, goal }: { label: string; goal: SavingsGoalRow | null
 
   return (
     <div>
-      <Typography.Text type="secondary" style={{ fontSize: 16 }}>
-        {label}
-      </Typography.Text>
-      <Typography.Text strong style={{ display: "block", marginTop: 4, fontSize: 17 }}>
-        {goal.title}
-      </Typography.Text>
-      <Typography.Text type="secondary" style={{ display: "block", fontSize: 14 }}>
-        ¥{current.toFixed(2)} / ¥{target.toFixed(2)}
-      </Typography.Text>
-      <Progress percent={Number(progress.toFixed(0))} style={{ marginTop: 8 }} />
+      <p className="text-sm text-muted">{label}</p>
+      <p className="mt-1 text-base font-semibold text-ink">{goal.title}</p>
+      <p className="text-sm text-muted">¥{current.toFixed(2)} / ¥{target.toFixed(2)}</p>
+      <div className="mt-2 h-2 rounded-full bg-primarySoft">
+        <div
+          className="h-2 rounded-full bg-primary"
+          style={{ width: `${Number(progress.toFixed(0))}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -113,24 +107,19 @@ export default function SavingsGoalsSummaryCard() {
   }, [goals]);
 
   return (
-    <Card
-      title={
-        <Typography.Text strong style={{ fontSize: 18 }}>
-          存钱目标
-        </Typography.Text>
-      }
-      loading={loading}
-      style={{ height: "100%" }}
-    >
-      {error ? (
-        <Typography.Text type="danger">{error}</Typography.Text>
+    <section className="h-full rounded-2xl border border-line bg-surface p-5 shadow-soft">
+      <h3 className="mb-3 text-lg font-semibold text-ink">存钱目标</h3>
+      {loading ? (
+        <p className="text-sm text-muted">加载中…</p>
+      ) : error ? (
+        <p className="text-sm text-red-600">{error}</p>
       ) : (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div className="grid gap-3">
           <GoalBlock label="短期目标" goal={topGoals.shortTerm} />
           <GoalBlock label="长期目标" goal={topGoals.longTerm} />
           <GoalBlock label="无截止日期" goal={topGoals.noDeadline} />
         </div>
       )}
-    </Card>
+    </section>
   );
 }

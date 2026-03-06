@@ -1,6 +1,5 @@
 "use client";
 
-import { Alert, Card, Skeleton, Typography } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
@@ -100,39 +99,26 @@ export default function BalanceRateCards({ selectedYear }: BalanceRateCardsProps
   );
 
   return (
-    <Card title="结余率" style={{ gridColumn: "1 / -1" }}>
-      {loading ? (
-        <Skeleton active />
-      ) : error ? (
-        <Alert type="error" title={error} showIcon />
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-          }}
-        >
-          <div>
-            <Typography.Text type="secondary">当月结余率</Typography.Text>
-            <Typography.Title level={4} style={{ margin: "4px 0 0" }}>
-              {formatPercent(monthRate)}
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              收入 ¥{monthIncome.toFixed(2)} / 支出 ¥{monthExpense.toFixed(2)}
-            </Typography.Text>
+    <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft" style={{ gridColumn: "1 / -1" }}>
+      <h3 className="mb-3 text-base font-semibold text-ink">结余率</h3>
+      {loading ? <p className="text-sm text-muted">加载中...</p> : null}
+      {!loading && error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+      ) : null}
+      {!loading && !error ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-line bg-white/80 p-3">
+            <p className="text-sm text-muted">当月结余率</p>
+            <p className="mt-1 text-2xl font-semibold text-ink">{formatPercent(monthRate)}</p>
+            <p className="text-sm text-muted">收入 ¥{monthIncome.toFixed(2)} / 支出 ¥{monthExpense.toFixed(2)}</p>
           </div>
-          <div>
-            <Typography.Text type="secondary">{selectedYear.year()} 年平均结余率</Typography.Text>
-            <Typography.Title level={4} style={{ margin: "4px 0 0" }}>
-              {formatPercent(yearRate)}
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              收入 ¥{yearIncome.toFixed(2)} / 支出 ¥{yearExpense.toFixed(2)}
-            </Typography.Text>
+          <div className="rounded-xl border border-line bg-white/80 p-3">
+            <p className="text-sm text-muted">{selectedYear.year()} 年平均结余率</p>
+            <p className="mt-1 text-2xl font-semibold text-ink">{formatPercent(yearRate)}</p>
+            <p className="text-sm text-muted">收入 ¥{yearIncome.toFixed(2)} / 支出 ¥{yearExpense.toFixed(2)}</p>
           </div>
         </div>
-      )}
-    </Card>
+      ) : null}
+    </section>
   );
 }

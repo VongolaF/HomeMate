@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Avatar, Dropdown, Layout, Space, Typography, message } from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
@@ -16,6 +15,8 @@ export default function HeaderBar() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuWrapperRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -48,6 +49,31 @@ export default function HeaderBar() {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!menuWrapperRef.current?.contains(target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [menuOpen]);
+
   const displayName = useMemo(() => {
     if (!user) return null;
     if (profile?.display_name) return profile.display_name;
@@ -61,60 +87,80 @@ export default function HeaderBar() {
       window.localStorage.removeItem(REMEMBER_ME_KEY);
       window.localStorage.removeItem(SESSION_STARTED_AT_KEY);
     }
-    message.success("已退出登录");
   };
 
   return (
-    <Layout.Header
-      style={{
-        background: "transparent",
-        padding: "12px 0",
-        height: "auto",
-      }}
-    >
-      <div
-        style={{
-          background: "#fff7f9",
-          borderRadius: 16,
-          padding: "12px 20px",
-          border: "1px solid #f4dbe4",
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <Typography.Title level={3} style={{ margin: 0, color: "#e64576" }}>
-          HomeMate
-        </Typography.Title>
+    <header className="relative z-40 pb-3">
+      <div className="relative flex w-full items-center justify-between rounded-2xl border border-[#bed4ed] bg-white/85 px-5 py-3.5 shadow-soft backdrop-blur">
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-2xl">
+          <img
+            src="/decor-cloud.svg"
+            alt=""
+            className="absolute -right-24 -top-14 w-[180px] opacity-12"
+          />
+          <img
+            src="/decor-dots.svg"
+            alt=""
+            className="absolute left-52 top-2 w-[76px] opacity-10"
+          />
+          <img
+            src="/decor-cloud.svg"
+            alt=""
+            className="absolute -left-10 -bottom-10 w-[160px] rotate-6 opacity-28"
+          />
+          <img
+            src="/decor-dots.svg"
+            alt=""
+            className="absolute right-40 bottom-0 w-[72px] opacity-20"
+          />
+          <div className="absolute left-1/2 top-0 h-20 w-20 -translate-x-1/2 rounded-full bg-[#d9e9fb]/45 blur-2xl" />
+        </div>
+        <div className="relative z-10 rounded-lg border border-[#c7daef] bg-white/78 px-2.5 py-0.5">
+          <h1 className="m-0 select-none text-[31px] font-bold tracking-[0.03em] text-[#1f466f] sm:text-[35px]">
+            HomeMate
+          </h1>
+        </div>
         {user && displayName ? (
-          <Dropdown
-            menu={{
-              items: [
-                {
-                  key: "profile",
-                  label: <Link href="/profile">个人中心</Link>,
-                },
-                { type: "divider" },
-                {
-                  key: "logout",
-                  label: "退出登录",
-                  onClick: handleLogout,
-                },
-              ],
-            }}
-          >
-            <Space style={{ cursor: "pointer" }}>
-              <Avatar size={32} src={avatarUrl || undefined}>
-                {displayName.slice(0, 1)}
-              </Avatar>
-              <Typography.Text style={{ color: "#6b1b3b" }}>
-                {displayName}
-              </Typography.Text>
-            </Space>
-          </Dropdown>
+          <div className="relative z-10" ref={menuWrapperRef}>
+            <button
+              className="flex cursor-pointer items-center gap-2 rounded-full border border-[#c9dbef] bg-[#edf4fc] px-2.5 py-1 text-[#355070]"
+              onClick={() => setMenuOpen((value) => !value)}
+              type="button"
+            >
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="avatar"
+                  className="h-8 w-8 rounded-full border border-[#b7cde7] object-cover"
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#7aa7d9] text-sm font-semibold text-white">
+                  {displayName.slice(0, 1)}
+                </div>
+              )}
+              <span className="font-semibold">{displayName}</span>
+            </button>
+            {menuOpen ? (
+              <div className="absolute right-0 top-12 z-[80] min-w-40 rounded-xl border border-[#d5e3f3] bg-white p-1 shadow-soft">
+                <Link
+                  href="/profile"
+                  className="block rounded-lg px-3 py-2 text-sm text-[#355070] hover:bg-[#eef4fb]"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  个人中心
+                </Link>
+                <button
+                  type="button"
+                  className="block w-full rounded-lg px-3 py-2 text-left text-sm text-[#355070] hover:bg-[#eef4fb]"
+                  onClick={handleLogout}
+                >
+                  退出登录
+                </button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
-    </Layout.Header>
+    </header>
   );
 }

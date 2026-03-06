@@ -4,28 +4,17 @@ import StatCards from "./StatCards";
 import SavingsGoalsSummaryCard from "./SavingsGoalsSummaryCard";
 import MonthlyTrendChart from "./MonthlyTrendChart";
 import DashboardCalendar from "./DashboardCalendar";
-import { Space, Typography } from "antd";
+import PageHeader from "@/components/PageHeader";
 
 export default function Dashboard() {
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <Space align="center" style={{ justifyContent: "space-between" }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          首页
-        </Typography.Title>
-      </Space>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: 16,
-          alignItems: "stretch",
-        }}
-      >
+    <div className="app-page">
+      <PageHeader title="首页" subtitle="家庭财务总览与关键提醒" />
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] items-stretch gap-4">
         <StatCards />
         <SavingsGoalsSummaryCard />
       </div>
-      <div style={{ display: "grid", gap: 16 }}>
+      <div className="grid gap-4">
         <MonthlyTrendChart />
         <DashboardCalendar />
       </div>

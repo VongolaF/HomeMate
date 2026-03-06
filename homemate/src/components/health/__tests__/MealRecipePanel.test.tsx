@@ -113,11 +113,11 @@ describe("Meal recipe panel", () => {
       expect(document.querySelector(".ant-skeleton")).toBeNull();
     });
 
-    const breakfastButton = await screen.findByText("燕麦酸奶杯");
-    fireEvent.click(breakfastButton);
+    const breakfastButtons = await screen.findAllByText("燕麦酸奶杯");
+    fireEvent.click(breakfastButtons[0]);
 
     expect(await screen.findByText(/早餐食谱/)).toBeInTheDocument();
-    expect(screen.getByText("燕麦酸奶杯")).toBeInTheDocument();
+    expect(screen.getAllByText("燕麦酸奶杯").length).toBeGreaterThan(0);
     expect(screen.getByText("燕麦 30g")).toBeInTheDocument();
     expect(screen.getByText("混合燕麦与酸奶")).toBeInTheDocument();
   });

@@ -1,24 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import dayjs, { type Dayjs } from "dayjs";
-import {
-  Alert,
-  Button,
-  Card,
-  DatePicker,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Progress,
-  Space,
-  Table,
-  Typography,
-} from "antd";
+import dayjs from "dayjs";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
+import PageHeader from "@/components/PageHeader";
 import { groupGoalsByHorizon } from "@/lib/savings/grouping";
 import GoalsSection from "@/components/savings/GoalsSection";
 
@@ -41,13 +27,13 @@ type Contribution = {
 type GoalFormValues = {
   title: string;
   target_amount: number;
-  deadline?: Dayjs;
+  deadline?: string;
   rule_amount?: number;
 };
 
 type ContributionFormValues = {
   amount: number;
-  contributed_at: Dayjs;
+  contributed_at: string;
 };
 
 export default function SavingsPage() {
@@ -66,8 +52,16 @@ export default function SavingsPage() {
   const [contribSaving, setContribSaving] = useState(false);
   const { user } = useAuth();
 
-  const [form] = Form.useForm<GoalFormValues>();
-  const [contributionForm] = Form.useForm<ContributionFormValues>();
+  const [goalForm, setGoalForm] = useState<GoalFormValues>({
+    title: "",
+    target_amount: 0,
+    deadline: undefined,
+    rule_amount: undefined,
+  });
+  const [contributionForm, setContributionForm] = useState<ContributionFormValues>({
+    amount: 0,
+    contributed_at: dayjs().format("YYYY-MM-DD"),
+  });
 
   const loadGoals = async () => {
     setLoading(true);
@@ -111,16 +105,21 @@ export default function SavingsPage() {
 
   const openCreate = () => {
     setEditingGoal(null);
-    form.resetFields();
+    setGoalForm({
+      title: "",
+      target_amount: 0,
+      deadline: undefined,
+      rule_amount: undefined,
+    });
     setModalOpen(true);
   };
 
   const openEdit = (goal: SavingsGoal) => {
     setEditingGoal(goal);
-    form.setFieldsValue({
+    setGoalForm({
       title: goal.title,
       target_amount: goal.target_amount,
-      deadline: goal.deadline ? dayjs(goal.deadline) : undefined,
+      deadline: goal.deadline || undefined,
       rule_amount: goal.rule_amount || undefined,
     });
     setModalOpen(true);
@@ -129,16 +128,26 @@ export default function SavingsPage() {
   const openDetail = async (goal: SavingsGoal) => {
     setActiveGoal(goal);
     setDrawerOpen(true);
-    contributionForm.setFieldsValue({
-      amount: undefined as unknown as number,
-      contributed_at: dayjs(),
+    setContributionForm({
+      amount: 0,
+      contributed_at: dayjs().format("YYYY-MM-DD"),
     });
     await loadContributions(goal.id);
   };
 
   const handleSaveGoal = async () => {
-    const values = await form.validateFields();
+    const values = goalForm;
+    if (!values.title.trim()) {
+      setError("填一下目标名字");
+      return;
+    }
+    if (!Number.isFinite(values.target_amount) || Number(values.target_amount) <= 0) {
+      setError("填一下目标金额");
+      return;
+    }
+
     setSaving(true);
+    setError(null);
 
     if (!user) {
       setError("请先登录");
@@ -148,9 +157,9 @@ export default function SavingsPage() {
 
     const payload = {
       user_id: user.id,
-      title: values.title,
+      title: values.title.trim(),
       target_amount: values.target_amount,
-      deadline: values.deadline ? values.deadline.format("YYYY-MM-DD") : null,
+      deadline: values.deadline || null,
       rule_amount: values.rule_amount ?? 0,
     };
 
@@ -186,6 +195,7 @@ export default function SavingsPage() {
 
   const handleDeleteGoal = async (goal: SavingsGoal) => {
     setSaving(true);
+    setError(null);
     const { error: deleteError } = await supabase
       .from("savings_goals")
       .delete()
@@ -203,11 +213,14 @@ export default function SavingsPage() {
 
   const handleAddContribution = async () => {
     if (!activeGoal) return;
-    const values = await contributionForm.validateFields();
+    const values = contributionForm;
+    if (!Number.isFinite(values.amount) || Number(values.amount) <= 0) return;
+    if (!values.contributed_at) return;
+
     setContribSaving(true);
 
     const amount = Number(values.amount || 0);
-    const contributed_at = values.contributed_at.format("YYYY-MM-DD");
+    const contributed_at = values.contributed_at;
 
     const { error: insertError } = await supabase.from("savings_contributions").insert({
       goal_id: activeGoal.id,
@@ -233,43 +246,54 @@ export default function SavingsPage() {
     await loadGoals();
     await loadContributions(activeGoal.id);
     setContribSaving(false);
-    contributionForm.resetFields();
-    contributionForm.setFieldsValue({ contributed_at: dayjs() });
+    setContributionForm({ amount: 0, contributed_at: dayjs().format("YYYY-MM-DD") });
   };
-
-  const columns = useMemo(
-    () => [
-      { title: "存入日期", dataIndex: "contributed_at", key: "date" },
-      { title: "存入金额", dataIndex: "amount", key: "amount" },
-    ],
-    []
-  );
 
   const groupedGoals = useMemo(() => groupGoalsByHorizon(goals), [goals]);
 
   const confirmDeleteGoal = (goal: SavingsGoal) => {
-    Modal.confirm({
-      title: "确定删除这个目标？",
-      onOk: () => handleDeleteGoal(goal),
-    });
+    const confirmed = window.confirm("确定删除这个目标？");
+    if (confirmed) {
+      handleDeleteGoal(goal);
+    }
   };
 
+  const activeProgress = activeGoal
+    ? Number(
+        (
+          ((Number(activeGoal.current_amount || 0) || 0) / (Number(activeGoal.target_amount || 0) || 1)) *
+          100
+        ).toFixed(0)
+      )
+    : 0;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Space align="center" style={{ justifyContent: "space-between" }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          存钱目标
-        </Typography.Title>
-        <Button type="primary" onClick={openCreate}>
-          添加目标
-        </Button>
-      </Space>
+    <div className="app-page">
+      <PageHeader
+        title="存钱目标"
+        subtitle="按短期与长期目标管理储蓄进度"
+        actions={
+          <button
+            type="button"
+            onClick={openCreate}
+            className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-white"
+          >
+            新建小目标
+          </button>
+        }
+      />
 
-      {error && <Alert type="error" title={error} showIcon />}
+      {error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
 
-      {loading && <Card loading />}
+      {loading ? (
+        <div className="rounded-2xl border border-line bg-panel p-4 text-sm text-muted">加载中...</div>
+      ) : null}
 
-      <div style={{ display: "grid", gap: 16 }}>
+      <div className="grid gap-4">
         <GoalsSection
           title="短期目标"
           goals={groupedGoals.shortTerm}
@@ -299,93 +323,177 @@ export default function SavingsPage() {
         />
       </div>
 
-      <Modal
-        title={editingGoal ? "修改目标" : "添加目标"}
-        open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        onOk={handleSaveGoal}
-        confirmLoading={saving}
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="title" label="目标名字" rules={[{ required: true, message: "填一下目标名字" }]}>
-            <Input placeholder="例如：旅行基金" />
-          </Form.Item>
-          <Form.Item
-            name="target_amount"
-            label="想存的金额"
-            rules={[{ required: true, message: "填一下目标金额" }]}
+      {modalOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-line bg-panel p-5 shadow-soft">
+            <h3 className="mb-4 text-lg font-semibold text-ink">{editingGoal ? "修改目标" : "添加目标"}</h3>
+            <div className="grid gap-3">
+              <label className="grid gap-1 text-sm text-muted">
+                目标名字
+                <input
+                  value={goalForm.title}
+                  onChange={(event) => setGoalForm((prev) => ({ ...prev, title: event.target.value }))}
+                  placeholder="例如：旅行基金"
+                  className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none"
+                />
+              </label>
+              <label className="grid gap-1 text-sm text-muted">
+                想存的金额
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={goalForm.target_amount || 0}
+                  onChange={(event) =>
+                    setGoalForm((prev) => ({ ...prev, target_amount: Number(event.target.value) }))
+                  }
+                  className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none"
+                />
+              </label>
+              <label className="grid gap-1 text-sm text-muted">
+                截止日期（可选）
+                <input
+                  type="date"
+                  value={goalForm.deadline || ""}
+                  onChange={(event) => setGoalForm((prev) => ({ ...prev, deadline: event.target.value || undefined }))}
+                  className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none"
+                />
+              </label>
+              <label className="grid gap-1 text-sm text-muted">
+                每月自动存入（可选）
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={goalForm.rule_amount ?? ""}
+                  onChange={(event) =>
+                    setGoalForm((prev) => ({
+                      ...prev,
+                      rule_amount: event.target.value ? Number(event.target.value) : undefined,
+                    }))
+                  }
+                  className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none"
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveGoal}
+                disabled={saving}
+                className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {saving ? "保存中..." : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {drawerOpen ? (
+        <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setDrawerOpen(false)}>
+          <aside
+            className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l border-line bg-panel p-5"
+            onClick={(event) => event.stopPropagation()}
           >
-            <InputNumber style={{ width: "100%" }} min={0} precision={2} />
-          </Form.Item>
-          <Form.Item name="deadline" label="截止日期 (可选 )">
-            <DatePicker style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="rule_amount" label="每月自动存入 (可选 )">
-            <InputNumber style={{ width: "100%" }} min={0} precision={2} />
-          </Form.Item>
-        </Form>
-      </Modal>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-ink">{activeGoal?.title}</h3>
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                className="rounded-lg border border-line px-2 py-1 text-xs text-muted"
+              >
+                关闭
+              </button>
+            </div>
 
-      <Drawer
-        title={activeGoal?.title}
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        size="default"
-      >
         {activeGoal && (
-          <Space orientation="vertical" style={{ width: "100%" }}>
-            <Typography.Text>
-              目标金额：¥{Number(activeGoal.target_amount || 0).toFixed(2)}
-            </Typography.Text>
-            <Typography.Text>
-              当前金额：¥{Number(activeGoal.current_amount || 0).toFixed(2)}
-            </Typography.Text>
-            <Progress
-              percent={
-                Number(
-                  (
-                    ((Number(activeGoal.current_amount || 0) || 0) /
-                      (Number(activeGoal.target_amount || 0) || 1)) *
-                    100
-                  ).toFixed(0)
-                )
-              }
-            />
+          <div className="space-y-4">
+            <p className="text-sm text-muted">目标金额：¥{Number(activeGoal.target_amount || 0).toFixed(2)}</p>
+            <p className="text-sm text-muted">当前金额：¥{Number(activeGoal.current_amount || 0).toFixed(2)}</p>
 
-            <Form form={contributionForm} layout="vertical">
-              <Form.Item
-                name="amount"
-                label="本次存入金额"
-                rules={[{ required: true, message: "填一下金额" }]}
-              >
-                <InputNumber style={{ width: "100%" }} min={0} precision={2} />
-              </Form.Item>
-              <Form.Item
-                name="contributed_at"
-                label="这次存入日期"
-                rules={[{ required: true, message: "选一下日期" }]}
-              >
-                <DatePicker style={{ width: "100%" }} />
-              </Form.Item>
-              <Button type="primary" block loading={contribSaving} onClick={handleAddContribution}>
-                保存存入
-              </Button>
-            </Form>
+            <div>
+              <div className="mb-1 flex justify-between text-xs text-muted">
+                <span>进度</span>
+                <span>{activeProgress}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-sky-100">
+                <div className="h-full rounded-full bg-primary" style={{ width: `${activeProgress}%` }} />
+              </div>
+            </div>
 
-            <Typography.Title level={5} style={{ marginTop: 16 }}>
-              存入明细
-            </Typography.Title>
-            <Table
-              size="small"
-              loading={contribLoading}
-              columns={columns}
-              dataSource={contributions}
-              rowKey="id"
-              pagination={false}
-            />
-          </Space>
+            <div className="grid gap-2">
+              <label className="grid gap-1 text-sm text-muted">
+                本次存入金额
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={contributionForm.amount || 0}
+                  onChange={(event) =>
+                    setContributionForm((prev) => ({ ...prev, amount: Number(event.target.value) }))
+                  }
+                  className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none"
+                />
+              </label>
+              <label className="grid gap-1 text-sm text-muted">
+                这次存入日期
+                <input
+                  type="date"
+                  value={contributionForm.contributed_at}
+                  onChange={(event) =>
+                    setContributionForm((prev) => ({ ...prev, contributed_at: event.target.value }))
+                  }
+                  className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={handleAddContribution}
+                disabled={contribSaving}
+                className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {contribSaving ? "保存中..." : "记一笔存入"}
+              </button>
+            </div>
+
+            <h4 className="pt-2 text-base font-semibold text-ink">存入明细</h4>
+            {contribLoading ? <p className="text-sm text-muted">加载中...</p> : null}
+            {!contribLoading && contributions.length === 0 ? (
+              <p className="text-sm text-muted">暂无明细</p>
+            ) : null}
+            {!contribLoading && contributions.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border border-line">
+                <table className="w-full text-sm">
+                  <thead className="bg-sky-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-muted">存入日期</th>
+                      <th className="px-3 py-2 text-left font-semibold text-muted">存入金额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contributions.map((item) => (
+                      <tr key={item.id} className="border-t border-line bg-white/90">
+                        <td className="px-3 py-2 text-ink">{item.contributed_at}</td>
+                        <td className="px-3 py-2 text-ink">¥{Number(item.amount).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
         )}
-      </Drawer>
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }

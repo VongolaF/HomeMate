@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, Empty, Typography } from "antd";
 import GoalCard, { type GoalCardData } from "./GoalCard";
 
 type GoalsSectionProps = {
@@ -23,28 +22,14 @@ export default function GoalsSection({
   emptyText = "还没有目标",
 }: GoalsSectionProps) {
   return (
-    <Card
-      title={
-        <Typography.Text strong style={{ fontSize: 16 }}>
-          {title}
-        </Typography.Text>
-      }
-      style={{ borderRadius: 16, borderWidth: 2 }}
-      styles={{
-        header: { borderBottomWidth: 2 },
-        body: { paddingTop: 12 },
-      }}
-    >
+    <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft">
+      <h3 className="mb-3 border-b border-line pb-3 text-base font-semibold text-ink">{title}</h3>
       {goals.length === 0 ? (
-        <Empty description={emptyText} />
+        <div className="rounded-xl border border-dashed border-line bg-sky-50/60 p-6 text-center text-sm text-muted">
+          {emptyText}
+        </div>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-            gap: 16,
-          }}
-        >
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {goals.map((goal) => (
             <GoalCard
               key={goal.id}
@@ -57,6 +42,6 @@ export default function GoalsSection({
           ))}
         </div>
       )}
-    </Card>
+    </section>
   );
 }

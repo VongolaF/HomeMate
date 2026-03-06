@@ -1,25 +1,10 @@
 "use client";
 
-import { QuestionCircleOutlined } from "@ant-design/icons";
-import {
-  Button,
-  Card,
-  Col,
-  Input,
-  Popover,
-  Row,
-  Select,
-  Space,
-  Spin,
-  Tooltip,
-  Typography,
-  message,
-  theme,
-} from "antd";
 import dayjs from "dayjs";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import PageHeader from "@/components/PageHeader";
 import MealWeekTable, { type MealDayPlan, type MealSlot } from "@/components/health/MealWeekTable";
 import WorkoutWeekTable, { type WorkoutDayPlan, type WorkoutSlot } from "@/components/health/WorkoutWeekTable";
 import { supabase } from "@/lib/supabase/client";
@@ -163,16 +148,14 @@ const buildHistoryPayload = (history: ChatMessage[]) =>
     .slice(-12);
 
 export default function HealthPage() {
-  const { token } = theme.useToken();
   const router = useRouter();
-  const [messageApi, contextHolder] = message.useMessage();
+
+  const [notice, setNotice] = useState<{ type: "error" | "warning" | "success"; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState<"meals" | "workouts">("meals");
   const [selectedContext, setSelectedContext] = useState<SelectedContext>(null);
   const [healthGoal, setHealthGoal] = useState<HealthGoal>(DEFAULT_HEALTH_GOAL);
   const [mealDayPlans, setMealDayPlans] = useState<MealDayPlanApi[]>([]);
   const [workoutDayPlans, setWorkoutDayPlans] = useState<WorkoutDayPlanApi[]>([]);
-  const [prevMealDayPlans, setPrevMealDayPlans] = useState<MealDayPlanApi[]>([]);
-  const [prevWorkoutDayPlans, setPrevWorkoutDayPlans] = useState<WorkoutDayPlanApi[]>([]);
   const [mealChatInput, setMealChatInput] = useState("");
   const [workoutChatInput, setWorkoutChatInput] = useState("");
   const [mealChatHistory, setMealChatHistory] = useState<ChatMessage[]>([]);
@@ -185,6 +168,8 @@ export default function HealthPage() {
 
   const mealChatScrollRef = useRef<HTMLDivElement | null>(null);
   const workoutChatScrollRef = useRef<HTMLDivElement | null>(null);
+  const chatTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const chatPopoverRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = useCallback((container: HTMLDivElement | null) => {
     if (!container) return;
@@ -202,17 +187,37 @@ export default function HealthPage() {
   }, [workoutChatHistory.length, scrollToBottom]);
 
   useEffect(() => {
-    if (!isChatOpen) return;
-    if (activeTab === "meals") scrollToBottom(mealChatScrollRef.current);
-    else scrollToBottom(workoutChatScrollRef.current);
-  }, [activeTab, isChatOpen, scrollToBottom]);
-
-  useEffect(() => {
     if (!authExpired) return;
-    messageApi.warning("登录已过期，请重新登录");
+    setNotice({ type: "warning", text: "登录已过期，请重新登录" });
     router.push("/login");
     setAuthExpired(false);
-  }, [authExpired, messageApi, router]);
+  }, [authExpired, router]);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const inTrigger = chatTriggerRef.current?.contains(target);
+      const inPopover = chatPopoverRef.current?.contains(target);
+      if (!inTrigger && !inPopover) {
+        setIsChatOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsChatOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isChatOpen]);
 
   const loadHealthGoal = useCallback(async () => {
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -230,144 +235,71 @@ export default function HealthPage() {
     if (normalized) setHealthGoal(normalized);
   }, []);
 
-  const persistHealthGoal = useCallback(
-    async (nextGoal: HealthGoal) => {
-      setHealthGoal(nextGoal);
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData.user) return;
+  const persistHealthGoal = useCallback(async (nextGoal: HealthGoal) => {
+    setHealthGoal(nextGoal);
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) return;
 
-      const { error } = await supabase
-        .from("profiles")
-        .update({ health_goal: nextGoal })
-        .eq("id", userData.user.id);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ health_goal: nextGoal })
+      .eq("id", userData.user.id);
 
-      if (error) {
-        messageApi.error("保存目标失败，请稍后再试");
-      }
-    },
-    [messageApi]
-  );
+    if (error) {
+      setNotice({ type: "error", text: "保存目标失败，请稍后再试" });
+    }
+  }, []);
 
-  const renderChatHistory = useCallback(
-    (history: ChatMessage[]) => {
-      if (!history.length) {
-        return (
-          <Typography.Text type="secondary" style={{ display: "block" }}>
-            暂无对话
-          </Typography.Text>
-        );
-      }
+  const renderChatHistory = useCallback((history: ChatMessage[]) => {
+    if (!history.length) {
+      return <p className="text-sm text-muted">暂无对话</p>;
+    }
 
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {history.map((item, index) => {
-            const isUser = item.role === "user";
-            const bubbleBackground = isUser ? token.colorPrimaryBg : token.colorBgContainer;
-            const bubbleBorderColor = token.colorBorderSecondary;
-            const avatarText = isUser ? "我" : "AI";
-            const bubbleRadius = isUser ? "12px 12px 2px 12px" : "12px 12px 12px 2px";
-            const isLoading = item.role === "assistant" && item.status === "loading";
-            const isError = item.role === "assistant" && item.status === "error";
+    return (
+      <div className="grid gap-3">
+        {history.map((item, index) => {
+          const isUser = item.role === "user";
+          const isLoading = item.role === "assistant" && item.status === "loading";
+          const isError = item.role === "assistant" && item.status === "error";
 
-            return (
-              <div
-                key={item.id || `${item.role}-${index}`}
-                style={{
-                  display: "flex",
-                  justifyContent: isUser ? "flex-end" : "flex-start",
-                }}
-              >
+          return (
+            <div
+              key={item.id || `${item.role}-${index}`}
+              className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+            >
+              <div className="flex max-w-[82%] items-start gap-2">
+                <div className="grid h-7 w-7 place-items-center rounded-full border border-line bg-slate-100 text-xs text-muted">
+                  {isUser ? "我" : "AI"}
+                </div>
                 <div
-                  style={{
-                    display: "flex",
-                    flexDirection: isUser ? "row-reverse" : "row",
-                    gap: 8,
-                    alignItems: "flex-start",
-                    maxWidth: "100%",
-                  }}
+                  className={`rounded-xl border px-3 py-2 text-sm ${
+                    isUser ? "border-sky-200 bg-sky-50" : "border-line bg-white"
+                  } ${isError ? "text-rose-700" : "text-ink"}`}
                 >
-                  <div
-                    aria-hidden
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 999,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      border: `1px solid ${bubbleBorderColor}`,
-                      background: token.colorFillTertiary,
-                      color: token.colorTextSecondary,
-                      fontSize: 12,
-                      flex: "0 0 auto",
-                    }}
-                  >
-                    {avatarText}
-                  </div>
-                  <div
-                    style={{
-                      maxWidth: "78%",
-                      border: `1px solid ${bubbleBorderColor}`,
-                      borderRadius: bubbleRadius,
-                      padding: "10px 12px",
-                      background: bubbleBackground,
-                    }}
-                  >
-                    {isLoading ? (
-                      <Space size={8}>
-                        <Spin size="small" />
-                        <Typography.Text type="secondary">正在思考…</Typography.Text>
-                      </Space>
-                    ) : (
-                      <Typography.Text
-                        style={{ whiteSpace: "pre-wrap" }}
-                        type={isError ? "danger" : undefined}
-                      >
-                        {item.content}
-                      </Typography.Text>
-                    )}
-                  </div>
+                  {isLoading ? "正在思考…" : <span className="whitespace-pre-wrap">{item.content}</span>}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      );
-    },
-    [token.colorBgContainer, token.colorBorderSecondary, token.colorFillTertiary, token.colorPrimaryBg, token.colorTextSecondary]
-  );
+            </div>
+          );
+        })}
+      </div>
+    );
+  }, []);
 
   const weekStart = useMemo(() => buildWeekStartMonday(), []);
-  const prevWeekStart = useMemo(
-    () => dayjs(weekStart).subtract(7, "day").format("YYYY-MM-DD"),
-    [weekStart]
-  );
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   const weekDays = useMemo(() => buildWeekDays(weekStart), [weekStart]);
-  const prevWeekDays = useMemo(() => buildWeekDays(prevWeekStart), [prevWeekStart]);
   const todayIso = useMemo(() => dayjs().format("YYYY-MM-DD"), []);
 
   const mealData = useMemo(() => createMealData(weekDays, mealDayPlans), [mealDayPlans, weekDays]);
-  const workoutData = useMemo(
-    () => createWorkoutData(weekDays, workoutDayPlans),
-    [weekDays, workoutDayPlans]
-  );
-
-  const prevMealData = useMemo(
-    () => createMealData(prevWeekDays, prevMealDayPlans),
-    [prevMealDayPlans, prevWeekDays]
-  );
-  const prevWorkoutData = useMemo(
-    () => createWorkoutData(prevWeekDays, prevWorkoutDayPlans),
-    [prevWeekDays, prevWorkoutDayPlans]
-  );
+  const workoutData = useMemo(() => createWorkoutData(weekDays, workoutDayPlans), [weekDays, workoutDayPlans]);
 
   const getAccessToken = useCallback(async () => {
     const nowSeconds = Math.floor(Date.now() / 1000);
 
     const { data, error } = await supabase.auth.getSession();
     if (error) {
-      messageApi.error("Unable to read session.");
+      setNotice({ type: "error", text: "Unable to read session." });
       return null;
     }
 
@@ -383,7 +315,7 @@ export default function HealthPage() {
       return session?.access_token ?? null;
     }
     return refreshed.session?.access_token ?? session?.access_token ?? null;
-  }, [messageApi]);
+  }, []);
 
   const fetchWithAuth = useCallback(
     async (url: string, init?: RequestInit) => {
@@ -419,7 +351,7 @@ export default function HealthPage() {
       }
       return retryResponse;
     },
-    [getAccessToken, supabase]
+    [getAccessToken]
   );
 
   const loadPlans = useCallback(async () => {
@@ -427,23 +359,19 @@ export default function HealthPage() {
     try {
       const token = await getAccessToken();
       if (!token) {
-        messageApi.warning("Please login first.");
+        setNotice({ type: "warning", text: "Please login first." });
         return;
       }
 
       const query = new URLSearchParams({ weekStart }).toString();
-      const prevQuery = new URLSearchParams({ weekStart: prevWeekStart }).toString();
 
-      const [mealResponse, workoutResponse, prevMealResponse, prevWorkoutResponse] =
-        await Promise.all([
-          fetchWithAuth(`/api/health/meal?${query}`),
-          fetchWithAuth(`/api/health/workout?${query}`),
-          fetchWithAuth(`/api/health/meal?${prevQuery}`),
-          fetchWithAuth(`/api/health/workout?${prevQuery}`),
-        ]);
+      const [mealResponse, workoutResponse] = await Promise.all([
+        fetchWithAuth(`/api/health/meal?${query}`),
+        fetchWithAuth(`/api/health/workout?${query}`),
+      ]);
 
-      if (!mealResponse || !workoutResponse || !prevMealResponse || !prevWorkoutResponse) {
-        messageApi.warning("Please login first.");
+      if (!mealResponse || !workoutResponse) {
+        setNotice({ type: "warning", text: "Please login first." });
         return;
       }
 
@@ -457,32 +385,17 @@ export default function HealthPage() {
         throw new Error(payload?.error || "Failed to load workout plan");
       }
 
-      if (!prevMealResponse.ok) {
-        const payload = await parseJson<{ error?: string }>(prevMealResponse);
-        throw new Error(payload?.error || "Failed to load previous meal plan");
-      }
-
-      if (!prevWorkoutResponse.ok) {
-        const payload = await parseJson<{ error?: string }>(prevWorkoutResponse);
-        throw new Error(payload?.error || "Failed to load previous workout plan");
-      }
-
       const mealPayload = await parseJson<HealthPlanResponse<MealDayPlanApi>>(mealResponse);
       const workoutPayload = await parseJson<HealthPlanResponse<WorkoutDayPlanApi>>(workoutResponse);
 
-      const prevMealPayload = await parseJson<HealthPlanResponse<MealDayPlanApi>>(prevMealResponse);
-      const prevWorkoutPayload = await parseJson<HealthPlanResponse<WorkoutDayPlanApi>>(prevWorkoutResponse);
-
       setMealDayPlans(mealPayload?.dayPlans ?? []);
       setWorkoutDayPlans(workoutPayload?.dayPlans ?? []);
-      setPrevMealDayPlans(prevMealPayload?.dayPlans ?? []);
-      setPrevWorkoutDayPlans(prevWorkoutPayload?.dayPlans ?? []);
     } catch (error) {
-      messageApi.error(error instanceof Error ? error.message : "Failed to load plans");
+      setNotice({ type: "error", text: error instanceof Error ? error.message : "Failed to load plans" });
     } finally {
       setIsLoadingPlans(false);
     }
-  }, [fetchWithAuth, getAccessToken, messageApi, prevWeekStart, weekStart]);
+  }, [fetchWithAuth, getAccessToken, weekStart]);
 
   const sendChatMessage = useCallback(
     async (view: "meals" | "workouts") => {
@@ -491,7 +404,7 @@ export default function HealthPage() {
       const trimmed = inputValue.trim();
 
       if (!trimmed) {
-        messageApi.warning("Please enter a message.");
+        setNotice({ type: "warning", text: "Please enter a message." });
         return;
       }
 
@@ -551,16 +464,14 @@ export default function HealthPage() {
       try {
         const token = await getAccessToken();
         if (!token) {
-          messageApi.warning("Please login first.");
+          setNotice({ type: "warning", text: "Please login first." });
           replaceAssistantPlaceholder({ content: "未登录或登录已过期，请重新登录后再试。", status: "error" });
           return;
         }
 
         const response = await fetchWithAuth("/api/health/agent-chat", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: messageForAgent,
             weekStart: contextWeekStart,
@@ -572,7 +483,7 @@ export default function HealthPage() {
         });
 
         if (!response) {
-          messageApi.warning("Please login first.");
+          setNotice({ type: "warning", text: "Please login first." });
           return;
         }
 
@@ -586,12 +497,10 @@ export default function HealthPage() {
         if (!reply) throw new Error("Empty agent response");
 
         replaceAssistantPlaceholder({ content: reply });
-
-        // The agent may have updated the plan via tools (update_*), so refresh the tables.
         void loadPlans();
       } catch (error) {
         const text = error instanceof Error ? error.message : "Agent request failed";
-        messageApi.error(text);
+        setNotice({ type: "error", text });
         replaceAssistantPlaceholder({ content: text, status: "error" });
       } finally {
         if (isMeals) setIsSendingMeal(false);
@@ -605,8 +514,6 @@ export default function HealthPage() {
       healthGoal,
       mealChatInput,
       mealChatHistory,
-      prevWeekStart,
-      messageApi,
       selectedContext,
       timezone,
       weekStart,
@@ -656,12 +563,7 @@ export default function HealthPage() {
     if (!selectedContext || selectedContext.view !== "meals") return null;
     if (selectedContext.selectionType !== "slot" || !selectedContext.slotType) return null;
 
-    const sourcePlans =
-      selectedContext.weekStart === weekStart
-        ? mealDayPlans
-        : selectedContext.weekStart === prevWeekStart
-          ? prevMealDayPlans
-          : [];
+    const sourcePlans = selectedContext.weekStart === weekStart ? mealDayPlans : [];
 
     const dayPlan = sourcePlans.find((plan) => plan.date === selectedContext.date);
     if (!dayPlan) return null;
@@ -692,7 +594,7 @@ export default function HealthPage() {
       recipe,
       mealText: mealText ?? null,
     };
-  }, [activeTab, mealDayPlans, prevMealDayPlans, prevWeekStart, selectedContext, weekStart]);
+  }, [activeTab, mealDayPlans, selectedContext, weekStart]);
 
   const selectedLabel = useMemo(() => {
     if (!selectedContext || selectedContext.view !== activeTab) {
@@ -704,315 +606,208 @@ export default function HealthPage() {
   }, [activeTab, selectedContext]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {contextHolder}
-      <Typography.Title level={3} style={{ margin: 0 }}>
-        健康计划
-      </Typography.Title>
-      <Card
-        styles={{
-          header: {
-            background: token.colorFillAlter,
-            border: `1px solid ${token.colorBorder}`,
-            borderBottom: `1px solid ${token.colorBorder}`,
-            borderTopLeftRadius: token.borderRadiusLG,
-            borderTopRightRadius: token.borderRadiusLG,
-          },
-          body: {
-            paddingTop: 16,
-          },
-        }}
-        style={{ borderRadius: token.borderRadiusLG }}
-        tabList={[
-          {
-            key: "meals",
-            tab: (
-              <Space size={8}>
-                <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>
-                  🍽️
-                </span>
-                <span style={{ fontWeight: activeTab === "meals" ? 700 : 500 }}>一周三餐</span>
-              </Space>
-            ),
-          },
-          {
-            key: "workouts",
-            tab: (
-              <Space size={8}>
-                <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>
-                  🏋️
-                </span>
-                <span style={{ fontWeight: activeTab === "workouts" ? 700 : 500 }}>一周健身计划</span>
-              </Space>
-            ),
-          },
-        ]}
-        activeTabKey={activeTab}
-        onTabChange={(key) => setActiveTab(key as "meals" | "workouts")}
-      >
+    <div className="app-page">
+      <PageHeader title="健康计划" subtitle="饮食与训练安排一站式管理" />
+
+      {notice ? (
         <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "flex-start",
-            flexWrap: "wrap",
-            marginBottom: 12,
-          }}
+          className={
+            notice.type === "error"
+              ? "rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+              : notice.type === "warning"
+                ? "rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"
+                : "rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-700"
+          }
         >
-          <Space size={12} wrap align="start">
-            <Space size={6}>
-              <Typography.Text type="secondary">近期目标</Typography.Text>
-              <Select
-                value={healthGoal}
-                style={{ minWidth: 160 }}
-                optionLabelProp="plainLabel"
-                options={HEALTH_GOAL_OPTIONS.map((opt) => ({
-                  value: opt.value,
-                  plainLabel: opt.label,
-                  label: (
-                    <Space size={6}>
-                      <span>{opt.label}</span>
-                      <Tooltip title={opt.hint} placement="right">
-                        <QuestionCircleOutlined style={{ color: token.colorTextSecondary }} />
-                      </Tooltip>
-                    </Space>
-                  ),
-                }))}
-                onChange={(value) => {
-                  const normalized = normalizeHealthGoal(value) ?? DEFAULT_HEALTH_GOAL;
-                  void persistHealthGoal(normalized);
-                }}
-              />
-            </Space>
+          {notice.text}
+        </div>
+      ) : null}
 
-            <Link href="/profile#body" prefetch={false}>
-              <Button type="link">修改身体信息</Button>
+      <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab("meals")}
+              className={`rounded-xl px-3 py-2 text-sm font-medium ${
+                activeTab === "meals" ? "bg-primary text-white" : "border border-line text-ink"
+              }`}
+            >
+              🍽️ 一周三餐
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("workouts")}
+              className={`rounded-xl px-3 py-2 text-sm font-medium ${
+                activeTab === "workouts" ? "bg-primary text-white" : "border border-line text-ink"
+              }`}
+            >
+              🏋️ 一周健身计划
+            </button>
+          </div>
+
+          <div className="relative flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted">近期目标</span>
+            <select
+              value={healthGoal}
+              onChange={(event) => {
+                const normalized = normalizeHealthGoal(event.target.value) ?? DEFAULT_HEALTH_GOAL;
+                void persistHealthGoal(normalized);
+              }}
+              className="min-w-40 rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink"
+            >
+              {HEALTH_GOAL_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <Link href="/profile#body" prefetch={false} className="text-sm font-medium text-primary hover:opacity-80">
+              完善身体信息
             </Link>
-          </Space>
+            <button
+              ref={chatTriggerRef}
+              type="button"
+              onClick={() => setIsChatOpen((value) => !value)}
+              disabled={isLoadingPlans}
+              className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-65"
+            >
+              {isLoadingPlans ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/80 border-t-transparent" />
+                  加载计划中...
+                </span>
+              ) : isChatOpen ? (
+                "收起对话"
+              ) : (
+                "和 AI 聊聊"
+              )}
+            </button>
 
-          <Popover
-            placement="bottomRight"
-            trigger="click"
-            open={isChatOpen}
-            onOpenChange={(open) => setIsChatOpen(open)}
-            destroyOnHidden
-            content={
-              <div style={{ width: 420, display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                  <Typography.Text strong>
-                    {activeTab === "meals" ? "健康助理" : "训练助理"}
-                  </Typography.Text>
-                  <Button size="small" onClick={() => setIsChatOpen(false)}>
-                    收起
-                  </Button>
-                </div>
-
-                <Typography.Text type="secondary">{selectedLabel}</Typography.Text>
-
-                <div
-                  ref={activeChatScrollRef}
-                  style={{
-                    height: 360,
-                    overflowY: "auto",
-                    padding: 12,
-                    borderRadius: 12,
-                    background: token.colorBgLayout,
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                  }}
-                >
+            {isChatOpen ? (
+              <div
+                ref={chatPopoverRef}
+                className="absolute right-0 top-full z-30 mt-2 w-[min(760px,calc(100vw-56px))] rounded-2xl border border-line bg-white/95 p-3 shadow-soft"
+              >
+                <span
+                  aria-hidden
+                  className="absolute -top-2 right-8 h-3 w-3 rotate-45 border-l border-t border-line bg-white/95"
+                />
+                <p className="mb-2 text-sm text-muted">{selectedLabel}</p>
+                <div ref={activeChatScrollRef} className="h-72 overflow-y-auto rounded-xl border border-line bg-slate-50 p-3">
                   {renderChatHistory(activeHistory)}
                 </div>
-
-                <Input.TextArea
-                  rows={3}
-                  placeholder={
-                    activeTab === "meals"
-                      ? "例如：今天午餐吃什么更合适？"
-                      : "例如：这天的训练强度是否合适？如何调整？"
-                  }
-                  value={activeChatInput}
-                  onChange={(event) =>
-                    activeTab === "meals"
-                      ? setMealChatInput(event.target.value)
-                      : setWorkoutChatInput(event.target.value)
-                  }
-                />
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <Button
-                    onClick={() => {
-                      if (activeTab === "meals") {
-                        setMealChatHistory([]);
-                      } else {
-                        setWorkoutChatHistory([]);
-                      }
-                    }}
-                  >
-                    清空聊天记录
-                  </Button>
-                  <Button
-                    type="primary"
-                    loading={isSendingActive}
-                    onClick={() => sendChatMessage(activeTab)}
-                  >
-                    发送
-                  </Button>
+                <div className="mt-3 grid gap-2">
+                  <textarea
+                    rows={3}
+                    placeholder={
+                      activeTab === "meals"
+                        ? "例如：今天午餐吃什么更合适？"
+                        : "例如：这天的训练强度是否合适？如何调整？"
+                    }
+                    value={activeChatInput}
+                    onChange={(event) =>
+                      activeTab === "meals" ? setMealChatInput(event.target.value) : setWorkoutChatInput(event.target.value)
+                    }
+                    className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeTab === "meals") setMealChatHistory([]);
+                        else setWorkoutChatHistory([]);
+                      }}
+                      className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink"
+                    >
+                      清空对话
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSendingActive}
+                      onClick={() => sendChatMessage(activeTab)}
+                      className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {isSendingActive ? "发送中..." : "发送消息"}
+                    </button>
+                  </div>
                 </div>
               </div>
-            }
-          >
-            <Tooltip
-              placement="left"
-              title={
-                "AI 可以：生成/优化一周三餐与健身计划；基于你选中的日期/餐次/训练给建议；按你的要求修改计划；也能给单餐吃什么建议（不写入计划）。"
-              }
-            >
-              <Button type="primary">打开 AI 对话</Button>
-            </Tooltip>
-          </Popover>
+            ) : null}
+          </div>
         </div>
 
         {activeTab === "meals" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Row gutter={[16, 16]} align="top">
-              <Col xs={24} lg={12} style={{ display: "flex" }}>
-                <Card
-                  title="上周饮食计划"
-                  loading={isLoadingPlans}
-                  styles={{ body: { paddingTop: 12 } }}
-                  style={{ width: "100%" }}
-                >
-                  <MealWeekTable
-                    data={prevMealData}
-                    selected={
-                      selectedContext?.view === "meals" && selectedContext.weekStart === prevWeekStart
-                        ? {
-                            date: selectedContext.date,
-                            selectionType: selectedContext.selectionType,
-                            slotType:
-                              selectedContext.selectionType === "slot"
-                                ? (selectedContext.slotType as MealSlot)
-                                : undefined,
-                          }
-                        : null
-                    }
-                    onSelect={(selection) => updateSelection("meals", prevWeekStart, selection)}
-                  />
-                </Card>
-              </Col>
-              <Col xs={24} lg={12} style={{ display: "flex" }}>
-                <Card
-                  title="本周饮食计划"
-                  loading={isLoadingPlans}
-                  styles={{ body: { paddingTop: 12 } }}
-                  style={{ width: "100%" }}
-                >
-                  <MealWeekTable
-                    data={mealData}
-                    highlightDate={todayIso}
-                    selected={
-                      selectedContext?.view === "meals" && selectedContext.weekStart === weekStart
-                        ? {
-                            date: selectedContext.date,
-                            selectionType: selectedContext.selectionType,
-                            slotType:
-                              selectedContext.selectionType === "slot"
-                                ? (selectedContext.slotType as MealSlot)
-                                : undefined,
-                          }
-                        : null
-                    }
-                    onSelect={(selection) => updateSelection("meals", weekStart, selection)}
-                  />
-                </Card>
-              </Col>
-            </Row>
-
+          <div className="grid gap-4">
+            <section className="rounded-xl border border-line bg-white/80 p-3">
+              <h4 className="mb-3 text-sm font-semibold text-ink">本周饮食计划</h4>
+              <MealWeekTable
+                data={mealData}
+                highlightDate={todayIso}
+                selected={
+                  selectedContext?.view === "meals" && selectedContext.weekStart === weekStart
+                    ? {
+                        date: selectedContext.date,
+                        selectionType: selectedContext.selectionType,
+                        slotType:
+                          selectedContext.selectionType === "slot"
+                            ? (selectedContext.slotType as MealSlot)
+                            : undefined,
+                      }
+                    : null
+                }
+                onSelect={(selection) => updateSelection("meals", weekStart, selection)}
+              />
+            </section>
           </div>
         ) : (
-          <Row gutter={[16, 16]} align="top">
-            <Col xs={24} lg={12} style={{ display: "flex" }}>
-              <Card
-                title="上周健身计划"
-                loading={isLoadingPlans}
-                styles={{ body: { paddingTop: 12 } }}
-                style={{ width: "100%" }}
-              >
-                <WorkoutWeekTable
-                  data={prevWorkoutData}
-                  selected={
-                    selectedContext?.view === "workouts" &&
-                    selectedContext.weekStart === prevWeekStart
-                      ? {
-                          date: selectedContext.date,
-                          selectionType: selectedContext.selectionType,
-                          slotType:
-                            selectedContext.selectionType === "slot"
-                              ? (selectedContext.slotType as WorkoutSlot)
-                              : undefined,
-                        }
-                      : null
-                  }
-                  onSelect={(selection) => updateSelection("workouts", prevWeekStart, selection)}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} lg={12} style={{ display: "flex" }}>
-              <Card
-                title="本周健身计划"
-                loading={isLoadingPlans}
-                styles={{ body: { paddingTop: 12 } }}
-                style={{ width: "100%" }}
-              >
-                <WorkoutWeekTable
-                  data={workoutData}
-                  highlightDate={todayIso}
-                  selected={
-                    selectedContext?.view === "workouts" &&
-                    selectedContext.weekStart === weekStart
-                      ? {
-                          date: selectedContext.date,
-                          selectionType: selectedContext.selectionType,
-                          slotType:
-                            selectedContext.selectionType === "slot"
-                              ? (selectedContext.slotType as WorkoutSlot)
-                              : undefined,
-                        }
-                      : null
-                  }
-                  onSelect={(selection) => updateSelection("workouts", weekStart, selection)}
-                />
-              </Card>
-            </Col>
-          </Row>
+          <div className="grid gap-4">
+            <section className="rounded-xl border border-line bg-white/80 p-3">
+              <h4 className="mb-3 text-sm font-semibold text-ink">本周健身计划</h4>
+              <WorkoutWeekTable
+                data={workoutData}
+                highlightDate={todayIso}
+                selected={
+                  selectedContext?.view === "workouts" && selectedContext.weekStart === weekStart
+                    ? {
+                        date: selectedContext.date,
+                        selectionType: selectedContext.selectionType,
+                        slotType:
+                          selectedContext.selectionType === "slot"
+                            ? (selectedContext.slotType as WorkoutSlot)
+                            : undefined,
+                      }
+                    : null
+                }
+                onSelect={(selection) => updateSelection("workouts", weekStart, selection)}
+              />
+            </section>
+          </div>
         )}
-      </Card>
+      </section>
 
       {selectedMealRecipe ? (
-        <Card
-          size="small"
-          title={`${selectedMealRecipe.date} · ${selectedMealRecipe.label}食谱`}
-          extra={
-            <Button size="small" onClick={() => setSelectedContext(null)}>
+        <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-base font-semibold text-ink">{`${selectedMealRecipe.date} · ${selectedMealRecipe.label}食谱`}</h3>
+            <button
+              type="button"
+              onClick={() => setSelectedContext(null)}
+              className="rounded-lg border border-line px-2 py-1 text-xs text-muted"
+            >
               收起
-            </Button>
-          }
-          style={{ width: "100%" }}
-        >
+            </button>
+          </div>
+
           {selectedMealRecipe.recipe ? (
-            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-              <Typography.Text strong>
-                {selectedMealRecipe.recipe.name || selectedMealRecipe.mealText || "未命名"}
-              </Typography.Text>
+            <div className="grid gap-3 text-sm">
+              <p className="font-semibold text-ink">{selectedMealRecipe.recipe.name || selectedMealRecipe.mealText || "未命名"}</p>
 
               <div>
-                <Typography.Text type="secondary">食材</Typography.Text>
-                <ul style={{ margin: "6px 0 0 16px" }}>
+                <p className="text-sm text-muted">食材</p>
+                <ul className="mt-1 list-disc pl-5 text-ink">
                   {(selectedMealRecipe.recipe.ingredients ?? []).length ? (
-                    (selectedMealRecipe.recipe.ingredients ?? []).map((item, idx) => (
-                      <li key={`${item}-${idx}`}>{item}</li>
-                    ))
+                    (selectedMealRecipe.recipe.ingredients ?? []).map((item, idx) => <li key={`${item}-${idx}`}>{item}</li>)
                   ) : (
                     <li>暂无食材信息</li>
                   )}
@@ -1020,12 +815,10 @@ export default function HealthPage() {
               </div>
 
               <div>
-                <Typography.Text type="secondary">步骤</Typography.Text>
-                <ol style={{ margin: "6px 0 0 16px" }}>
+                <p className="text-sm text-muted">步骤</p>
+                <ol className="mt-1 list-decimal pl-5 text-ink">
                   {(selectedMealRecipe.recipe.steps ?? []).length ? (
-                    (selectedMealRecipe.recipe.steps ?? []).map((step, idx) => (
-                      <li key={`${step}-${idx}`}>{step}</li>
-                    ))
+                    (selectedMealRecipe.recipe.steps ?? []).map((step, idx) => <li key={`${step}-${idx}`}>{step}</li>)
                   ) : (
                     <li>暂无制作步骤</li>
                   )}
@@ -1034,17 +827,15 @@ export default function HealthPage() {
 
               {selectedMealRecipe.recipe.tips ? (
                 <div>
-                  <Typography.Text type="secondary">小贴士</Typography.Text>
-                  <Typography.Paragraph style={{ margin: "6px 0 0" }}>
-                    {selectedMealRecipe.recipe.tips}
-                  </Typography.Paragraph>
+                  <p className="text-sm text-muted">小贴士</p>
+                  <p className="mt-1 text-ink">{selectedMealRecipe.recipe.tips}</p>
                 </div>
               ) : null}
-            </Space>
+            </div>
           ) : (
-            <Typography.Text type="secondary">该餐暂无食谱，建议重新生成。</Typography.Text>
+            <p className="text-sm text-muted">该餐暂无食谱，建议重新生成。</p>
           )}
-        </Card>
+        </section>
       ) : null}
     </div>
   );

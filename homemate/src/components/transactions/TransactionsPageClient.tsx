@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Button, Space, Typography, message } from "antd";
 import type { Transaction, UserCategory } from "@/types/transactions";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
+import PageHeader from "@/components/PageHeader";
 import TransactionsFilters, {
   type TransactionsFilterValues,
 } from "@/components/transactions/TransactionsFilters";
@@ -34,6 +34,7 @@ export default function TransactionsPageClient({
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | undefined>(undefined);
   const [isPending, startTransition] = useTransition();
+  const [notice, setNotice] = useState<{ type: "error" | "warning" | "success"; text: string } | null>(null);
   const requestId = useRef(0);
 
   const getExchangeRate = async (
@@ -116,7 +117,7 @@ export default function TransactionsPageClient({
         setFilters(nextFilters);
       } catch (error) {
         if (currentRequest !== requestId.current) return;
-        message.error("加载失败，请稍后再试");
+        setNotice({ type: "error", text: "加载失败，请稍后再试" });
       }
     });
   };
@@ -170,7 +171,7 @@ export default function TransactionsPageClient({
         if (error) throw error;
         refreshData(filters);
       } catch (error) {
-        message.error("删除失败，请稍后再试");
+        setNotice({ type: "error", text: "删除失败，请稍后再试" });
       }
     });
   };
@@ -209,13 +210,15 @@ export default function TransactionsPageClient({
         if (error) throw error;
         const rateMissing = rate === null;
         if (rateMissing) {
-          message.warning("没有找到汇率，已按原币种保存");
+          setNotice({ type: "warning", text: "没有找到汇率，已按原币种保存" });
+        } else {
+          setNotice({ type: "success", text: "保存成功" });
         }
         setIsModalOpen(false);
         setEditing(undefined);
         refreshData(filters);
       } catch (error) {
-        message.error("保存失败，请稍后再试");
+        setNotice({ type: "error", text: "保存失败，请稍后再试" });
       }
     });
   };
@@ -236,7 +239,7 @@ export default function TransactionsPageClient({
         if (error) throw error;
         refreshData(filters);
       } catch (error) {
-        message.error("分类保存失败，请稍后再试");
+        setNotice({ type: "error", text: "分类保存失败，请稍后再试" });
       }
     });
   };
@@ -253,26 +256,51 @@ export default function TransactionsPageClient({
         if (error) throw error;
         refreshData(filters);
       } catch (error) {
-        message.error("分类停用失败，请稍后再试");
+        setNotice({ type: "error", text: "分类停用失败，请稍后再试" });
       }
     });
   };
 
   return (
-    <div style={{ display: "grid", gap: 24 }}>
-      <Space align="center" style={{ justifyContent: "space-between" }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          记账
-        </Typography.Title>
-        <Space>
-          <Button onClick={() => setIsCategoryOpen(true)} disabled={isPending}>
-            分类管理
-          </Button>
-          <Button type="primary" onClick={() => setIsModalOpen(true)} disabled={isPending}>
-            + 添加记录
-          </Button>
-        </Space>
-      </Space>
+    <div className="app-page" style={{ gap: 24 }}>
+      <PageHeader
+        title="记账"
+        subtitle="记录日常收支并按分类快速检索"
+        actions={
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsCategoryOpen(true)}
+              disabled={isPending}
+              type="button"
+              className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink disabled:opacity-60"
+            >
+              管理分类
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              disabled={isPending}
+              className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              + 记一笔
+            </button>
+          </div>
+        }
+      />
+
+      {notice ? (
+        <div
+          className={
+            notice.type === "error"
+              ? "rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              : notice.type === "warning"
+              ? "rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"
+              : "rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700"
+          }
+        >
+          {notice.text}
+        </div>
+      ) : null}
 
       <TransactionsSummary totals={totals} />
       <TransactionsFilters categories={activeCategories} onApply={handleApplyFilters} />
@@ -302,7 +330,7 @@ export default function TransactionsPageClient({
         onDeactivate={handleDeactivateCategory}
       />
 
-      {isPending ? <Typography.Text type="secondary">更新中...</Typography.Text> : null}
+      {isPending ? <p className="text-sm text-muted">更新中...</p> : null}
     </div>
   );
 }

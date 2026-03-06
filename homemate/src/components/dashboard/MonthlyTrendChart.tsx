@@ -1,6 +1,5 @@
 "use client";
 
-import { Alert, Card, DatePicker, Empty, Skeleton } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -13,6 +12,8 @@ import {
   Legend,
 } from "recharts";
 import { supabase } from "@/lib/supabase/client";
+import { CHART_COLORS } from "@/lib/theme/chartPalette";
+import EmptyState from "@/components/EmptyState";
 
 const LEGEND_LABELS: Record<string, string> = {
   expense: "支出",
@@ -85,23 +86,22 @@ export default function MonthlyTrendChart() {
   const legendFormatter = (value: string) => LEGEND_LABELS[value] ?? value;
 
   return (
-    <Card
-      title="本月趋势"
-      extra={
-        <DatePicker
-          picker="month"
-          allowClear={false}
-          value={selectedMonth}
-          onChange={(value) => value && setSelectedMonth(value)}
+    <section className="rounded-2xl border border-line bg-surface p-5 shadow-soft">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="m-0 text-lg font-semibold text-ink">本月趋势</h3>
+        <input
+          type="month"
+          value={selectedMonth.format("YYYY-MM")}
+          onChange={(event) => setSelectedMonth(dayjs(`${event.target.value}-01`))}
+          className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-primary"
         />
-      }
-    >
+      </div>
       {loading ? (
-        <Skeleton active />
+        <p className="text-sm text-muted">加载中…</p>
       ) : error ? (
-        <Alert type="error" title={error} showIcon />
+        <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
       ) : !hasData ? (
-        <Empty description="还没有数据" />
+        <EmptyState title="还没有数据" />
       ) : (
         <div style={{ width: "100%", height: 400 }}>
           <ResponsiveContainer>
@@ -109,11 +109,11 @@ export default function MonthlyTrendChart() {
               <XAxis
                 dataKey="day"
                 tickMargin={8}
-                label={{ value: "日 期", position: "end", dy: 20, style: { fontSize: 14, fontWeight: "bold", fill: "#000" } }}
+                label={{ value: "日 期", position: "end", dy: 20, style: { fontSize: 14, fontWeight: "bold", fill: CHART_COLORS.axisLabel } }}
               />
               <YAxis
                 tickMargin={8}
-                label={{ value: "金 额", angle: 0, position: "insideTop", dy: -32, style: { fontSize: 14, fontWeight: "bold", fill: "#000" } }}
+                label={{ value: "金 额", angle: 0, position: "insideTop", dy: -32, style: { fontSize: 14, fontWeight: "bold", fill: CHART_COLORS.axisLabel } }}
               />
               <Tooltip />
               <Legend
@@ -122,12 +122,12 @@ export default function MonthlyTrendChart() {
                 wrapperStyle={{ paddingBottom: 8 }}
                 formatter={legendFormatter}
               />
-              <Line type="monotone" dataKey="expense" stroke="#ff6fae" strokeWidth={2} />
-              <Line type="monotone" dataKey="income" stroke="#7c9cff" strokeWidth={2} />
+              <Line type="monotone" dataKey="expense" stroke={CHART_COLORS.expense} strokeWidth={2} />
+              <Line type="monotone" dataKey="income" stroke={CHART_COLORS.income} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
-    </Card>
+    </section>
   );
 }

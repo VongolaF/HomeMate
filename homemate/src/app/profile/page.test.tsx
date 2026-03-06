@@ -2,10 +2,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProfilePage from "./page";
 
-vi.mock("antd-img-crop", () => ({
-  default: ({ children }: { children: unknown }) => children,
-}));
-
 const pushMock = vi.fn();
 const fromMock = vi.fn();
 const selectMock = vi.fn();

@@ -1,7 +1,5 @@
 "use client";
 
-import { Button, Card, Space, Typography, theme } from "antd";
-
 export type MealSlot = "breakfast" | "lunch" | "dinner" | "snacks";
 
 export type MealDayPlan = {
@@ -32,39 +30,25 @@ const renderValueButton = (
   date: string,
   slotType: MealSlot,
   onSelect: MealWeekTableProps["onSelect"],
-  selected: MealWeekTableProps["selected"] | undefined,
-  token: ReturnType<typeof theme.useToken>["token"]
+  selected: MealWeekTableProps["selected"] | undefined
 ) => {
   const isSelected =
     selected?.date === date && selected?.selectionType === "slot" && selected?.slotType === slotType;
   const display = value?.trim() ? value : "-";
 
   return (
-    <Button
-      type="link"
-      size="small"
-      block
+    <button
+      type="button"
       onClick={() => onSelect({ date, selectionType: "slot", slotType })}
-      style={{
-        padding: 0,
-        height: "auto",
-        fontWeight: isSelected ? 600 : 400,
-        textAlign: "left",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        overflowWrap: "anywhere",
-        lineHeight: 1.35,
-        color: isSelected ? token.colorPrimaryText : undefined,
-        background: isSelected ? token.colorPrimaryBgHover : undefined,
-        border: isSelected ? `1px solid ${token.colorPrimaryBorder}` : undefined,
-        borderRadius: isSelected ? 8 : undefined,
-        paddingInline: isSelected ? 6 : undefined,
-        paddingBlock: isSelected ? 4 : undefined,
-      }}
+      className={`block w-full rounded-lg text-left text-sm leading-relaxed transition ${
+        isSelected
+          ? "border border-sky-300 bg-sky-50 px-2 py-1 font-semibold text-primary"
+          : "px-0 py-0 font-normal text-ink"
+      }`}
       aria-current={isSelected ? "true" : undefined}
     >
       {display}
-    </Button>
+    </button>
   );
 };
 
@@ -74,40 +58,25 @@ export default function MealWeekTable({
   selected = null,
   highlightDate,
 }: MealWeekTableProps) {
-  const { token } = theme.useToken();
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        gap: 12,
-      }}
-    >
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {data.map((day) => {
         const isHighlighted = Boolean(highlightDate && highlightDate === day.date);
         const isDaySelected = Boolean(selected?.date === day.date && selected?.selectionType === "day");
         const isSlotSelected = Boolean(selected?.date === day.date && selected?.selectionType === "slot");
         const isSelectedAny = isDaySelected || isSlotSelected;
 
-        const selectionBg = token.colorPrimaryBgHover;
-
-        const cardBorderColor = isSelectedAny
-          ? token.colorPrimary
-          : isHighlighted
-            ? token.colorPrimaryBorder
-            : undefined;
-        const cardBackground = isSelectedAny
-          ? selectionBg
-          : isHighlighted
-            ? token.colorPrimaryBg
-            : undefined;
-        const cardBorderWidth = isSelectedAny ? 2 : 1;
-
         return (
-          <Card
+          <article
             key={day.date}
-            size="small"
-          title={
+            className={`rounded-2xl border bg-panel p-3 shadow-soft ${
+              isSelectedAny
+                ? "border-2 border-primary bg-sky-50"
+                : isHighlighted
+                ? "border-sky-300 bg-sky-50/70"
+                : "border-line"
+            }`}
+          >
             <div
               role="button"
               tabIndex={0}
@@ -118,28 +87,18 @@ export default function MealWeekTable({
                   onSelect({ date: day.date, selectionType: "day" });
                 }
               }}
-              style={{ cursor: "pointer" }}
+              className="cursor-pointer"
             >
-              <Space orientation="vertical" size={0}>
-                <Typography.Text strong style={{ color: isSelectedAny ? token.colorPrimaryText : undefined }}>
+              <div className="grid gap-0.5">
+                <p className={`text-sm font-semibold ${isSelectedAny ? "text-primary" : "text-ink"}`}>
                   {day.weekdayLabel}
                   {selected?.date === day.date && selected?.selectionType === "day" ? "（已选）" : ""}
-                </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {day.date}
-                </Typography.Text>
-              </Space>
+                </p>
+                <p className="text-xs text-muted">{day.date}</p>
+              </div>
             </div>
-          }
-          style={{
-            width: "100%",
-            borderColor: cardBorderColor,
-            borderWidth: cardBorderWidth,
-            background: cardBackground,
-            borderLeft: isSelectedAny ? `6px solid ${token.colorPrimary}` : undefined,
-          }}
-        >
-          <Space orientation="vertical" size={10} style={{ width: "100%" }}>
+
+          <div className="mt-3 grid gap-2.5">
             {mealSlots.map((slot) => (
               (() => {
                 const isSlotRowSelected =
@@ -150,37 +109,26 @@ export default function MealWeekTable({
                 return (
               <div
                 key={slot.key}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "52px 1fr",
-                  gap: 8,
-                  alignItems: "start",
-                  background: isSlotRowSelected ? token.colorPrimaryBgHover : undefined,
-                  border: isSlotRowSelected ? `1px solid ${token.colorPrimaryBorder}` : undefined,
-                  borderRadius: isSlotRowSelected ? 12 : undefined,
-                  padding: isSlotRowSelected ? 8 : undefined,
-                  borderLeft: isSlotRowSelected ? `4px solid ${token.colorPrimary}` : undefined,
-                }}
+                className={`grid grid-cols-[52px_1fr] items-start gap-2 rounded-xl ${
+                  isSlotRowSelected ? "border border-sky-300 bg-sky-50 p-2" : ""
+                }`}
               >
-                <Typography.Text type="secondary" style={{ fontSize: 12, lineHeight: "20px" }}>
-                  {slot.label}
-                </Typography.Text>
-                <div style={{ lineHeight: "20px" }}>
+                <p className="text-xs leading-5 text-muted">{slot.label}</p>
+                <div className="leading-5">
                   {renderValueButton(
                     day[slot.key],
                     day.date,
                     slot.key,
                     onSelect,
-                    selected,
-                    token
+                    selected
                   )}
                 </div>
               </div>
                 );
               })()
             ))}
-          </Space>
-          </Card>
+          </div>
+          </article>
         );
       })}
     </div>

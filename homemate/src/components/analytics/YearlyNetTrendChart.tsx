@@ -1,6 +1,5 @@
 "use client";
 
-import { Alert, Card, Empty, Skeleton } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -13,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { supabase } from "@/lib/supabase/client";
+import { CHART_COLORS } from "@/lib/theme/chartPalette";
 
 interface YearlyNetTrendChartProps {
   selectedYear: Dayjs;
@@ -77,14 +77,16 @@ export default function YearlyNetTrendChart({
   const hasData = useMemo(() => data.some((item) => item.net !== 0), [data]);
 
   return (
-    <Card title="每月结余趋势">
-      {loading ? (
-        <Skeleton active />
-      ) : error ? (
-        <Alert type="error" title={error} showIcon />
-      ) : !hasData ? (
-        <Empty description="还没有数据" />
-      ) : (
+    <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft">
+      <h3 className="mb-3 text-base font-semibold text-ink">每月结余趋势</h3>
+      {loading ? <p className="text-sm text-muted">加载中...</p> : null}
+      {!loading && error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+      ) : null}
+      {!loading && !error && !hasData ? (
+        <div className="rounded-xl border border-dashed border-line bg-sky-50/60 p-6 text-center text-sm text-muted">还没有数据</div>
+      ) : null}
+      {!loading && !error && hasData ? (
         <div style={{ width: "100%", height: 350 }}>
           <ResponsiveContainer>
             <LineChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 12 }}>
@@ -95,7 +97,7 @@ export default function YearlyNetTrendChart({
                   value: "月 份",
                   position: "end",
                   dy: 20,
-                  style: { fontSize: 14, fontWeight: "bold", fill: "#000" },
+                  style: { fontSize: 14, fontWeight: "bold", fill: CHART_COLORS.axisLabel },
                 }}
               />
               <YAxis
@@ -105,16 +107,16 @@ export default function YearlyNetTrendChart({
                   angle: 0,
                   position: "insideTop",
                   dy: -32,
-                  style: { fontSize: 14, fontWeight: "bold", fill: "#000" },
+                  style: { fontSize: 14, fontWeight: "bold", fill: CHART_COLORS.axisLabel },
                 }}
               />
               <Tooltip />
               <Legend align="center" verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
-              <Line type="monotone" dataKey="net" name="结余" stroke="#8cd4ff" strokeWidth={2} />
+              <Line type="monotone" dataKey="net" name="结余" stroke={CHART_COLORS.net} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </div>
-      )}
-    </Card>
+      ) : null}
+    </section>
   );
 }

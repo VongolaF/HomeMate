@@ -1,12 +1,12 @@
 "use client";
 
-import { Alert, Card, DatePicker, Empty, Skeleton } from "antd";
-import dayjs, { type Dayjs } from "dayjs";
+import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { supabase } from "@/lib/supabase/client";
+import { CHART_COLORS } from "@/lib/theme/chartPalette";
 
-const COLORS = ["#ff8fb1", "#ffd39f", "#9ad0ff", "#c3f0ca", "#c9b7ff"];
+const COLORS = CHART_COLORS.pie;
 
 type ExpenseCategoryRow = {
   amount_base: number | null;
@@ -14,7 +14,7 @@ type ExpenseCategoryRow = {
 };
 
 export default function CategoryPieChart() {
-  const [selectedMonth, setSelectedMonth] = useState<Dayjs>(dayjs());
+  const [selectedMonth, setSelectedMonth] = useState(() => dayjs().format("YYYY-MM"));
   const [data, setData] = useState<Array<{ name: string; value: number }>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +24,9 @@ export default function CategoryPieChart() {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
-      const start = selectedMonth.startOf("month").format("YYYY-MM-DD");
-      const end = selectedMonth.endOf("month").format("YYYY-MM-DD");
+      const month = dayjs(`${selectedMonth}-01`);
+      const start = month.startOf("month").format("YYYY-MM-DD");
+      const end = month.endOf("month").format("YYYY-MM-DD");
 
       const { data: rows, error: fetchError } = await supabase
         .from("transactions")
@@ -65,24 +66,27 @@ export default function CategoryPieChart() {
   const hasData = useMemo(() => data.some((item) => item.value > 0), [data]);
 
   return (
-    <Card
-      title="分类占比"
-      extra={
-        <DatePicker
-          picker="month"
-          allowClear={false}
+    <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-ink">分类占比</h3>
+        <input
+          type="month"
           value={selectedMonth}
-          onChange={(value) => value && setSelectedMonth(value)}
+          onChange={(event) => setSelectedMonth(event.target.value)}
+          className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink"
         />
-      }
-    >
-      {loading ? (
-        <Skeleton active />
-      ) : error ? (
-        <Alert type="error" title={error} showIcon />
-      ) : !hasData ? (
-        <Empty description="还没有数据" />
-      ) : (
+      </div>
+
+      {loading ? <p className="text-sm text-muted">加载中...</p> : null}
+      {!loading && error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+      ) : null}
+      {!loading && !error && !hasData ? (
+        <div className="rounded-xl border border-dashed border-line bg-sky-50/60 p-6 text-center text-sm text-muted">
+          还没有数据
+        </div>
+      ) : null}
+      {!loading && !error && hasData ? (
         <div style={{ width: "100%", height: 260 }}>
           <ResponsiveContainer>
             <PieChart>
@@ -96,7 +100,7 @@ export default function CategoryPieChart() {
             </PieChart>
           </ResponsiveContainer>
         </div>
-      )}
-    </Card>
+      ) : null}
+    </section>
   );
 }

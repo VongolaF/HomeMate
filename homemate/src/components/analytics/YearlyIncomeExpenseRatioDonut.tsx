@@ -1,16 +1,16 @@
 "use client";
 
-import { Alert, Card, Empty, Skeleton } from "antd";
 import type { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { supabase } from "@/lib/supabase/client";
+import { CHART_COLORS } from "@/lib/theme/chartPalette";
 
 interface YearlyIncomeExpenseRatioDonutProps {
   selectedYear: Dayjs;
 }
 
-const COLORS = ["#7c9cff", "#ff6fae"]; // income, expense
+const COLORS = [CHART_COLORS.income, CHART_COLORS.expense];
 
 export default function YearlyIncomeExpenseRatioDonut({
   selectedYear,
@@ -67,14 +67,16 @@ export default function YearlyIncomeExpenseRatioDonut({
   const hasData = useMemo(() => data.some((item) => item.value > 0), [data]);
 
   return (
-    <Card title="年度收支占比">
-      {loading ? (
-        <Skeleton active />
-      ) : error ? (
-        <Alert type="error" title={error} showIcon />
-      ) : !hasData ? (
-        <Empty description="还没有数据" />
-      ) : (
+    <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft">
+      <h3 className="mb-3 text-base font-semibold text-ink">年度收支占比</h3>
+      {loading ? <p className="text-sm text-muted">加载中...</p> : null}
+      {!loading && error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+      ) : null}
+      {!loading && !error && !hasData ? (
+        <div className="rounded-xl border border-dashed border-line bg-sky-50/60 p-6 text-center text-sm text-muted">还没有数据</div>
+      ) : null}
+      {!loading && !error && hasData ? (
         <div style={{ width: "100%", height: 320 }}>
           <ResponsiveContainer>
             <PieChart>
@@ -94,7 +96,7 @@ export default function YearlyIncomeExpenseRatioDonut({
             </PieChart>
           </ResponsiveContainer>
         </div>
-      )}
-    </Card>
+      ) : null}
+    </section>
   );
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import { Alert, Card, DatePicker, Empty, Skeleton } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -13,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { supabase } from "@/lib/supabase/client";
+import { CHART_COLORS } from "@/lib/theme/chartPalette";
 
 type TransactionRow = { amount_base: number | null; category_id: string | null };
 type CategoryRow = { id: string; name: string };
@@ -33,7 +33,7 @@ function renderCategoryYAxisLabel(props: unknown) {
       y={cy}
       textAnchor="middle"
       dominantBaseline="middle"
-      fill="#000"
+      fill={CHART_COLORS.axisLabel}
       fontSize={14}
       fontWeight={700}
     >
@@ -115,24 +115,24 @@ export default function MonthlyTopExpenseCategories() {
   const hasData = useMemo(() => data.some((item) => item.value > 0), [data]);
 
   return (
-    <Card
-      title="当月支出 Top 分类"
-      extra={
-        <DatePicker
-          picker="month"
-          allowClear={false}
-          value={selectedMonth}
-          onChange={(value) => value && setSelectedMonth(value)}
+    <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-ink">当月支出 Top 分类</h3>
+        <input
+          type="month"
+          value={selectedMonth.format("YYYY-MM")}
+          onChange={(event) => setSelectedMonth(dayjs(`${event.target.value}-01`))}
+          className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink"
         />
-      }
-    >
-      {loading ? (
-        <Skeleton active />
-      ) : error ? (
-        <Alert type="error" title={error} showIcon />
-      ) : !hasData ? (
-        <Empty description="还没有数据" />
-      ) : (
+      </div>
+      {loading ? <p className="text-sm text-muted">加载中...</p> : null}
+      {!loading && error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+      ) : null}
+      {!loading && !error && !hasData ? (
+        <div className="rounded-xl border border-dashed border-line bg-sky-50/60 p-6 text-center text-sm text-muted">还没有数据</div>
+      ) : null}
+      {!loading && !error && hasData ? (
         <div style={{ width: "100%", height: 320 }}>
           <ResponsiveContainer>
             <BarChart data={data} layout="vertical" margin={{ top: 16, right: 16, left: 32, bottom: 8 }}>
@@ -142,7 +142,7 @@ export default function MonthlyTopExpenseCategories() {
                   value: "金 额",
                   position: "end",
                   dy: 15,
-                  style: { fontSize: 14, fontWeight: "bold", fill: "#000" },
+                  style: { fontSize: 14, fontWeight: "bold", fill: CHART_COLORS.axisLabel },
                 }}
               />
               <YAxis
@@ -153,11 +153,11 @@ export default function MonthlyTopExpenseCategories() {
               />
               <Tooltip />
               <Legend align="center" verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
-              <Bar dataKey="value" name="支出" fill="#ff6fae" radius={[0, 6, 6, 0]} />
+              <Bar dataKey="value" name="支出" fill={CHART_COLORS.expense} radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-      )}
-    </Card>
+      ) : null}
+    </section>
   );
 }

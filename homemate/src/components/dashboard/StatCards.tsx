@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
@@ -58,31 +57,28 @@ export default function StatCards() {
   const balance = useMemo(() => income - expense, [income, expense]);
 
   return (
-    <Card title="本月概览" loading={loading} style={{ height: "100%" }}>
-      {error ? (
-        <Typography.Text type="danger">加载没成功</Typography.Text>
+    <section className="h-full rounded-2xl border border-line bg-surface p-5 shadow-soft">
+      <h3 className="mb-3 text-lg font-semibold text-ink">本月概览</h3>
+      {loading ? (
+        <p className="text-sm text-muted">加载中…</p>
+      ) : error ? (
+        <p className="text-sm text-red-600">加载没成功</p>
       ) : (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div className="grid gap-3">
           <div>
-            <Typography.Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 15 }}>本月花了</Typography.Text>
-            <Typography.Title level={4} style={{ margin: "4px 0 0" }}>
-              ¥{expense.toFixed(2)}
-            </Typography.Title>
+            <p className="mt-1 block text-sm text-muted">本月花了</p>
+            <p className="mt-1 text-2xl font-semibold text-ink">¥{expense.toFixed(2)}</p>
           </div>
           <div>
-            <Typography.Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 15 }}>本月进账</Typography.Text>
-            <Typography.Title level={4} style={{ margin: "4px 0 0" }}>
-              ¥{income.toFixed(2)}
-            </Typography.Title>
+            <p className="mt-1 block text-sm text-muted">本月进账</p>
+            <p className="mt-1 text-2xl font-semibold text-ink">¥{income.toFixed(2)}</p>
           </div>
           <div>
-            <Typography.Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 15 }}>结余</Typography.Text>
-            <Typography.Title level={4} style={{ margin: "4px 0 0" }}>
-              ¥{balance.toFixed(2)}
-            </Typography.Title>
+            <p className="mt-1 block text-sm text-muted">结余</p>
+            <p className="mt-1 text-2xl font-semibold text-ink">¥{balance.toFixed(2)}</p>
           </div>
         </div>
       )}
-    </Card>
+    </section>
   );
 }

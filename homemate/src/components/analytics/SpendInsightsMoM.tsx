@@ -1,6 +1,5 @@
 "use client";
 
-import { Alert, Card, DatePicker, Divider, Empty, Skeleton, Space, Typography } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
@@ -104,41 +103,33 @@ export default function SpendInsightsMoM({
   const hasData = useMemo(() => insights.length > 0, [insights]);
 
   return (
-    <Card
-      title="支出优化建议 (环比)"
-      extra={
-        <DatePicker
-          picker="month"
-          allowClear={false}
-          value={selectedMonth}
-          onChange={(value) => value && onSelectedMonthChange(value)}
+    <section className="rounded-2xl border-2 border-line bg-panel p-4 shadow-soft">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-ink">支出优化建议 (环比)</h3>
+        <input
+          type="month"
+          value={selectedMonth.format("YYYY-MM")}
+          onChange={(event) => onSelectedMonthChange(dayjs(`${event.target.value}-01`))}
+          className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink"
         />
-      }
-    >
-      {loading ? (
-        <Skeleton active />
-      ) : error ? (
-        <Alert type="error" title={error} showIcon />
-      ) : !hasData ? (
-        <Empty description="还没有足够数据生成建议" />
-      ) : (
-        <Space
-          orientation="vertical"
-          style={{ width: "100%" }}
-          separator={<Divider style={{ margin: "8px 0" }} />}
-        >
+      </div>
+      {loading ? <p className="text-sm text-muted">加载中...</p> : null}
+      {!loading && error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+      ) : null}
+      {!loading && !error && !hasData ? (
+        <div className="rounded-xl border border-dashed border-line bg-sky-50/60 p-6 text-center text-sm text-muted">还没有足够数据生成建议</div>
+      ) : null}
+      {!loading && !error && hasData ? (
+        <div className="grid gap-2">
           {insights.map((item) => (
-            <div key={item.name} style={{ display: "grid", gap: 2 }}>
-              <Typography.Text strong>
-                {item.name} 增加 ¥{item.delta.toFixed(2)}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                上月 ¥{item.previous.toFixed(2)} → 本月 ¥{item.current.toFixed(2)}
-              </Typography.Text>
+            <div key={item.name} className="rounded-xl border border-line bg-white/90 px-3 py-2">
+              <p className="text-sm font-semibold text-ink">{item.name} 增加 ¥{item.delta.toFixed(2)}</p>
+              <p className="text-sm text-muted">上月 ¥{item.previous.toFixed(2)} → 本月 ¥{item.current.toFixed(2)}</p>
             </div>
           ))}
-        </Space>
-      )}
-    </Card>
+        </div>
+      ) : null}
+    </section>
   );
 }

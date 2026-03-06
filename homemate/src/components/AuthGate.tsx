@@ -1,6 +1,5 @@
 import type * as React from "react";
 import Link from "next/link";
-import { Button } from "antd";
 
 export default function AuthGate({
   user,
@@ -14,10 +13,15 @@ export default function AuthGate({
   if (loading) return <div style={{ padding: 24 }}>加载中...</div>;
   if (!user) {
     return (
-      <div style={{ padding: 24 }}>
-        <div style={{ marginBottom: 12 }}>请先登录</div>
+      <div className="p-6">
+        <div className="mb-3 text-ink">请先登录</div>
         <Link href="/login">
-          <Button type="primary">去登录</Button>
+          <button
+            type="button"
+            className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:opacity-95"
+          >
+            去登录看看
+          </button>
         </Link>
       </div>
     );

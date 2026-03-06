@@ -1,10 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color-scheme: light;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
-  background: #fff1f7;
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 10% 16%, rgba(214, 228, 246, 0.56), transparent 18%),
+    radial-gradient(circle at 88% 10%, rgba(201, 222, 244, 0.4), transparent 20%),
+    radial-gradient(circle at 82% 82%, rgba(222, 235, 248, 0.42), transparent 18%),
+    linear-gradient(180deg, #f9fbff 0%, #f3f7fd 100%);
   font-family: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+  color: #355070;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}
+
+a {
+  transition: color 0.2s ease;
+}
+
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+.ant-btn:focus-visible,
+.ant-menu-item:focus-visible {
+  outline: 2px solid #7aa7d9;
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.ant-card,
+.ant-table-wrapper,
+.ant-statistic,
+.ant-tabs-content-holder {
+  border-radius: 20px;
+}
+
+.ant-card {
+  border-width: 1.5px !important;
+}
+
+.ant-btn {
+  font-weight: 600;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.ant-btn:hover {
+  transform: translateY(-1px);
+}
+
+.ant-tag {
+  border-radius: 999px;
+}
+
+.app-page {
+  display: grid;
+  gap: 16px;
+}
+
+.app-page-subtitle {
+  color: #5c7fa8 !important;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+
+.ant-empty {
+  padding: 12px 8px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef5fd 100%);
+  border: 1px dashed #b8d0eb;
+}
+
+.ant-empty .ant-empty-description {
+  color: #446688;
+  font-weight: 500;
+}
+
+.ant-empty .ant-empty-image {
+  opacity: 0.9;
+  transform: scale(0.96);
+}
+
+.app-grid-main-side {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 16px;
+}
+
+.app-grid-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.app-grid-stretch {
+  align-items: stretch;
+}
+
+.app-table .ant-table {
+  border: 1px solid #d7e5f5;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.app-table .ant-table-thead > tr > th {
+  background: #f1f6fd !important;
+  color: #355070 !important;
+  font-weight: 600;
+  border-bottom-color: #d7e5f5 !important;
+}
+
+.app-table .ant-table-tbody > tr > td {
+  border-bottom-color: #e1ebf7 !important;
+}
+
+.app-table .ant-table-tbody > tr:hover > td {
+  background: #eef4fb !important;
+}
+
+.ant-modal .ant-modal-content,
+.ant-drawer .ant-drawer-content {
+  border: 1px solid #d7e5f5;
+  box-shadow: 0 14px 30px rgba(122, 167, 217, 0.16), 0 2px 8px rgba(95, 143, 194, 0.1);
+}
+
+.ant-modal .ant-modal-header,
+.ant-drawer .ant-drawer-header {
+  border-bottom: 1px solid #e1ebf7;
+}
+
+.ant-form-item-label > label {
+  color: #355070 !important;
+  font-weight: 600;
+}
+
+.ant-input,
+.ant-input-number,
+.ant-picker,
+.ant-select-selector,
+.ant-input-affix-wrapper {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .dashboard-calendar .ant-picker-content th {
@@ -25,10 +171,55 @@ body {
 }
 
 .headerbar-username {
-  color: #6b1b3b;
+  color: #355070;
 }
 
 .headerbar-username:hover {
-  color: #e64576;
+  color: #527aa5;
   text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .app-grid-main-side,
+  .app-grid-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-page {
+    gap: 12px;
+  }
+
+  .ant-layout-content {
+    padding: 14px !important;
+    min-height: calc(100vh - 96px) !important;
+  }
+
+  .ant-layout-header {
+    padding-bottom: 10px !important;
+  }
+
+  .ant-card .ant-card-head {
+    padding-inline: 14px;
+  }
+
+  .ant-card .ant-card-body {
+    padding: 14px;
+  }
+
+  .app-table .ant-table-content {
+    overflow-x: auto;
+  }
 }
