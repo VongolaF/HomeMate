@@ -179,6 +179,80 @@ button:focus-visible,
   text-decoration: underline;
 }
 
+@keyframes app-float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes app-float-xy-left {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-10px, -12px);
+  }
+}
+
+@keyframes app-float-xy-right {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(10px, -10px);
+  }
+}
+
+@keyframes app-sway {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+.app-float-character {
+  animation: app-float-y 5.6s ease-in-out infinite;
+}
+
+.app-float-character > img {
+  animation: app-sway 4.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.app-float-character-left {
+  animation: app-float-xy-left 5.8s ease-in-out infinite;
+}
+
+.app-float-character-right {
+  animation: app-float-xy-right 5.1s ease-in-out infinite;
+}
+
+.app-float-character-reverse > img {
+  animation-name: app-sway;
+  animation-direction: reverse;
+}
+
+.app-float-slow {
+  animation-duration: 7s;
+}
+
+.app-float-fast {
+  animation-duration: 4.4s;
+}
+
+.app-float-soft {
+  opacity: 0.92;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -187,6 +261,14 @@ button:focus-visible,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .app-float-character,
+  .app-float-character-left,
+  .app-float-character-right,
+  .app-float-character > img {
+    animation: none !important;
+    transform: none !important;
   }
 }
 

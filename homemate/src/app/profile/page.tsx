@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import PageHeader from "@/components/PageHeader";
+import AboutAndPreferencesPanel from "@/components/profile/AboutAndPreferencesPanel";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
 import { REMEMBER_ME_KEY, SESSION_STARTED_AT_KEY } from "@/lib/auth/constants";
@@ -532,6 +533,8 @@ export default function ProfilePage() {
           </div>
         )}
       </section>
+
+      <AboutAndPreferencesPanel onNotice={setNotice} />
     </div>
   );
 }
