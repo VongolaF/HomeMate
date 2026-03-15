@@ -534,7 +534,7 @@ export default function ProfilePage() {
         )}
       </section>
 
-      <AboutAndPreferencesPanel onNotice={setNotice} />
+      <AboutAndPreferencesPanel />
     </div>
   );
 }
