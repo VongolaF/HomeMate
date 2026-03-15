@@ -42,3 +42,39 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export async function PATCH(request: Request) {
+  const auth = await requireApiUser(request);
+  if ("response" in auth) return auth.response;
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const displayName = typeof body.displayName === "string" ? body.displayName.trim() : null;
+  const username = typeof body.username === "string" ? body.username.trim() : null;
+  const phone = typeof body.phone === "string" ? body.phone.trim() : null;
+  const baseCurrency =
+    typeof body.baseCurrency === "string" && body.baseCurrency.trim()
+      ? body.baseCurrency.trim().toUpperCase()
+      : null;
+
+  const { error } = await auth.supabase
+    .from("profiles")
+    .update({
+      display_name: displayName || null,
+      username: username || null,
+      phone: phone || null,
+      base_currency: baseCurrency || "CNY",
+    })
+    .eq("id", auth.user.id);
+
+  if (error) {
+    return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
+  }
+
+  return GET(request);
+}

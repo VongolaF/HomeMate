@@ -5,7 +5,6 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
 import { REMEMBER_ME_KEY, SESSION_STARTED_AT_KEY } from "@/lib/auth/constants";
-import packageJson from "../../package.json";
 
 type ProfileRow = {
   username: string | null;
@@ -150,7 +149,6 @@ export default function HeaderBar() {
                 >
                   个人中心
                 </Link>
-                <div className="px-3 py-1 text-xs text-[#6c8aad]">版本 v{packageJson.version}</div>
                 <button
                   type="button"
                   className="block w-full rounded-lg px-3 py-2 text-left text-sm text-[#355070] hover:bg-[#eef4fb]"
